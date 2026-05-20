@@ -7,6 +7,7 @@ from typing import Optional
 import litellm
 
 from app.graph.state import ProviderResult, ScanState
+from app.services.provider_service import ProviderService
 
 DOMAIN_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9\-]*\.[a-zA-Z]{2,}$")
 
@@ -119,8 +120,8 @@ async def classify_business(state: ScanState) -> dict:
     )
 
     try:
-        response = await litellm.acompletion(
-            model="gemini/gemini-2.0-flash",
+        response = await ProviderService.acompletion(
+            provider="gemini",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1,
             max_tokens=2048,
@@ -225,8 +226,8 @@ async def query_single_provider(
     provider_name = provider_cfg["name"]
 
     try:
-        response = await litellm.acompletion(
-            model=model,
+        response = await ProviderService.acompletion(
+            provider=provider_name,
             messages=[{"role": "user", "content": prompts[0] if prompts else ""}],
             temperature=0.1,
             max_tokens=512,
