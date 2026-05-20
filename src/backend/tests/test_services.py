@@ -1,0 +1,205 @@
+import uuid
+import pytest
+from unittest.mock import AsyncMock, patch
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from app.models.database import Base
+from app.models.schema import BusinessCreate, ProviderConfigCreate
+from app.services.user_service import UserService
+from app.services.provider_service import ProviderService, DEFAULT_PROVIDERS
+
+DATABASE_URL = "sqlite:///:memory:"
+
+@pytest.fixture(name="db_session")
+def fixture_db_session():
+    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+    Base.metadata.create_all(bind=engine)
+    SessionTesting = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    db = SessionTesting()
+    try:
+        yield db
+    finally:
+        db.close()
+        Base.metadata.drop_all(bind=engine)
+
+
+def test_user_service_operations(db_session):
+    # 1. Create Organization
+    org = UserService.create_organization(db_session, "Services Dental Group")
+    assert org.id is not None
+    assert org.name == "Services Dental Group"
+
+    # Get Organization
+    fetched_org = UserService.get_organization(db_session, org.id)
+    assert fetched_org is not None
+    assert fetched_org.name == "Services Dental Group"
+
+    # 2. Get/Create User
+    user_id = uuid.uuid4()
+    user = UserService.get_or_create_user(
+        db=db_session,
+        user_id=user_id,
+        email="test_user@dental.com",
+        auth_provider="google",
+        first_name="Jane",
+        last_name="Doe",
+        phone="9876543210"
+    )
+    assert user.id == user_id
+    assert user.email == "test_user@dental.com"
+    assert user.first_name == "Jane"
+    assert user.organization_id is None
+
+    # Retrieve User
+    fetched_user = UserService.get_user(db_session, user_id)
+    assert fetched_user is not None
+    assert fetched_user.email == "test_user@dental.com"
+
+    # Assign User to Organization
+    updated_user = UserService.assign_user_to_org(db_session, user_id, org.id)
+    assert updated_user is not None
+    assert updated_user.organization_id == org.id
+    assert len(org.users) == 1
+
+    # 3. Create Business under Organization
+    biz_data = BusinessCreate(
+        organization_id=org.id,
+        name="Smile Center Dallas",
+        domain="smilecenterdallas.com",
+        industry="dentist",
+        primary_city="Dallas",
+        primary_state="Texas",
+        country="USA",
+        service_focuses=["Cleanings", "Orthodontics"],
+        target_suburbs=["Plano", "Frisco"]
+    )
+    biz = UserService.create_business(db_session, org.id, biz_data)
+    assert biz.id is not None
+    assert biz.organization_id == org.id
+    assert biz.name == "Smile Center Dallas"
+    assert biz.service_focuses == ["Cleanings", "Orthodontics"]
+    assert biz.target_suburbs == ["Plano", "Frisco"]
+
+    # Get Business
+    fetched_biz = UserService.get_business(db_session, biz.id)
+    assert fetched_biz is not None
+    assert fetched_biz.name == "Smile Center Dallas"
+
+    # Get Businesses by Organization
+    businesses = UserService.get_businesses_by_org(db_session, org.id)
+    assert len(businesses) == 1
+    assert businesses[0].id == biz.id
+
+
+def test_provider_service_configs(db_session):
+    # 1. Initially active configs list is empty
+    configs = ProviderService.get_active_configs(db_session)
+    assert len(configs) == 0
+
+    # 2. Create provider configuration
+    config_create = ProviderConfigCreate(
+        provider="gemini",
+        model="gemini/gemini-2.0-flash",
+        api_base="https://custom.gemini.endpoint",
+        api_key="super_secret_gemini_key",
+        is_active=True,
+        timeout_seconds=25
+    )
+    config = ProviderService.create_provider_config(db_session, config_create)
+    assert config.provider == "gemini"
+    assert config.model == "gemini/gemini-2.0-flash"
+    assert config.api_base == "https://custom.gemini.endpoint"
+    assert config.api_key == "super_secret_gemini_key"
+    assert config.is_active is True
+    assert config.timeout_seconds == 25
+
+    # Get active configs
+    active_configs = ProviderService.get_active_configs(db_session)
+    assert len(active_configs) == 1
+    assert active_configs[0].provider == "gemini"
+
+    # Get specific provider config
+    fetched_config = ProviderService.get_provider_config(db_session, "gemini")
+    assert fetched_config is not None
+    assert fetched_config.api_key == "super_secret_gemini_key"
+
+    # 3. Update existing provider config
+    update_data = ProviderConfigCreate(
+        provider="gemini",
+        model="gemini/gemini-2.0-pro",
+        api_base="https://new.gemini.endpoint",
+        api_key="updated_secret_key",
+        is_active=True,
+        timeout_seconds=30
+    )
+    updated = ProviderService.create_provider_config(db_session, update_data)
+    assert updated.id == config.id  # Same record
+    assert updated.model == "gemini/gemini-2.0-pro"
+    assert updated.api_base == "https://new.gemini.endpoint"
+    assert updated.api_key == "updated_secret_key"
+    assert updated.timeout_seconds == 30
+
+
+@pytest.mark.asyncio
+async def test_provider_service_acompletion_with_db_config(db_session):
+    # 1. Create a ProviderConfig
+    config_data = ProviderConfigCreate(
+        provider="groq",
+        model="groq/llama-3.3-70b-versatile",
+        api_base="https://api.groq.com/v1",
+        api_key="groq_secret_key",
+        is_active=True,
+        timeout_seconds=18
+    )
+    ProviderService.create_provider_config(db_session, config_data)
+
+    messages = [{"role": "user", "content": "Hello!"}]
+    mock_response = {"choices": [{"message": {"content": "Hello! I am Groq."}}]}
+
+    with patch("app.services.provider_service.litellm.acompletion", new_callable=AsyncMock) as mock_acompletion:
+        mock_acompletion.return_value = mock_response
+
+        res = await ProviderService.acompletion(
+            db=db_session,
+            provider="groq",
+            messages=messages,
+            temperature=0.7
+        )
+
+        assert res == mock_response
+        mock_acompletion.assert_called_once_with(
+            model="groq/llama-3.3-70b-versatile",
+            messages=messages,
+            timeout=18,
+            api_key="groq_secret_key",
+            api_base="https://api.groq.com/v1",
+            temperature=0.7
+        )
+
+
+@pytest.mark.asyncio
+async def test_provider_service_acompletion_with_fallback(db_session):
+    # No ProviderConfig in DB for perplexity
+    messages = [{"role": "user", "content": "Hello perplexity"}]
+    mock_response = {"choices": [{"message": {"content": "Hello! I am Perplexity."}}]}
+
+    with patch("app.services.provider_service.litellm.acompletion", new_callable=AsyncMock) as mock_acompletion:
+        mock_acompletion.return_value = mock_response
+
+        res = await ProviderService.acompletion(
+            db=db_session,
+            provider="perplexity",
+            messages=messages,
+            max_tokens=100
+        )
+
+        assert res == mock_response
+        default = DEFAULT_PROVIDERS["perplexity"]
+        mock_acompletion.assert_called_once_with(
+            model=default["model"],
+            messages=messages,
+            timeout=default["timeout"],
+            max_tokens=100
+        )

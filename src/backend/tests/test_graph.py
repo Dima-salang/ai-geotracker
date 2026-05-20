@@ -81,7 +81,7 @@ class TestClassifyBusiness:
         })
 
         mocker.patch(
-            "app.graph.nodes.litellm.acompletion",
+            "app.services.provider_service.litellm.acompletion",
             return_value=mock_resp,
         )
 
@@ -108,7 +108,7 @@ class TestClassifyBusiness:
     @pytest.mark.asyncio
     async def test_falls_back_when_llm_fails(self, mocker):
         mocker.patch(
-            "app.graph.nodes.litellm.acompletion",
+            "app.services.provider_service.litellm.acompletion",
             side_effect=Exception("API error"),
         )
 
@@ -134,7 +134,7 @@ class TestClassifyBusiness:
     @pytest.mark.asyncio
     async def test_fallback_prompts_include_services(self, mocker):
         mocker.patch(
-            "app.graph.nodes.litellm.acompletion",
+            "app.services.provider_service.litellm.acompletion",
             side_effect=Exception("API error"),
         )
 
@@ -196,7 +196,7 @@ class TestQueryProviders:
         )
 
         mocker.patch(
-            "app.graph.nodes.litellm.acompletion",
+            "app.services.provider_service.litellm.acompletion",
             return_value=mock_response,
         )
 
@@ -237,7 +237,7 @@ class TestQueryProviders:
             return mock_response
 
         mocker.patch(
-            "app.graph.nodes.litellm.acompletion",
+            "app.services.provider_service.litellm.acompletion",
             side_effect=side_effect,
         )
 
@@ -285,7 +285,7 @@ class TestGraph:
             return provider_resp
 
         mocker.patch(
-            "app.graph.nodes.litellm.acompletion",
+            "app.services.provider_service.litellm.acompletion",
             side_effect=mock_llm,
         )
 
@@ -335,7 +335,7 @@ class TestGraph:
             return provider_resp
 
         mocker.patch(
-            "app.graph.nodes.litellm.acompletion",
+            "app.services.provider_service.litellm.acompletion",
             side_effect=mock_llm,
         )
 
