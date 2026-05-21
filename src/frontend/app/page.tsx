@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useState, useRef, useEffect } from "react";
 import DitheredParticles from "../components/DitheredParticles";
 import ResultsDashboard, { ProviderResult, ScanRecommendation, ResearchedDetails } from "../components/ResultsDashboard";
@@ -11,6 +12,7 @@ const NAV_LINKS = [
   { label: "LOGS", href: "#" },
   { label: "AUDITS", href: "#" },
   { label: "SATELLITE", href: "#" },
+  { label: "SETTINGS", href: "/admin" },
 ] as const;
 
 /* ── Stats ── */
