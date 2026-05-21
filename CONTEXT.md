@@ -6,6 +6,8 @@
 ## People
 - **Client**: A business owner or potential customer who submits a business for visibility analysis via the website.
 - **Operator**: An internal user who can manually review, escalate, or intervene in audit workflows.
+- **Operator Settings Dashboard**: An exclusive configuration panel for the internal Operator team to manage global AI engines, connection endpoints, timeouts, and access keys.
+
 
 ## Actions
 - **Quick Scan (freemium)**: A multi-provider LLM visibility check. Superficial analysis. Free tier.
