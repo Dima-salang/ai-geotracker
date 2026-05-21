@@ -6,13 +6,14 @@ from sqlalchemy.orm import sessionmaker
 from unittest.mock import AsyncMock, patch
 
 from app.models.database import Base
-from app.models.schema import Business, Scan, Organization, User
+from app.models.schema import Business, Scan, Organization, User, ScanResult, ProviderConfig
 from app.graph.state import ScanRequest, ScanState
 
-DATABASE_URL = "sqlite:///:memory:"
+DATABASE_URL = "sqlite:///./test_temp.db"
 
 @pytest.fixture(name="db_session")
 def fixture_db_session():
+    import os
     engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
     Base.metadata.create_all(bind=engine)
     SessionTesting = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -35,6 +36,11 @@ def fixture_db_session():
     finally:
         db.close()
         Base.metadata.drop_all(bind=engine)
+        if os.path.exists("test_temp.db"):
+            try:
+                os.remove("test_temp.db")
+            except Exception:
+                pass
 
 
 @pytest.mark.asyncio
@@ -80,6 +86,9 @@ async def test_scan_event_stream_domain_only_enrichment(db_session, mocker):
         events.append(event)
 
 
+        events.append(event)
+
+
     # 1. Verify business was inserted and then updated with researched details
     biz = db_session.query(Business).filter(Business.domain == "stripe.com").first()
     assert biz is not None
@@ -91,3 +100,240 @@ async def test_scan_event_stream_domain_only_enrichment(db_session, mocker):
     scan = db_session.query(Scan).filter(Scan.business_id == biz.id).first()
     assert scan is not None
     assert scan.status == "complete"
+
+
+from fastapi.testclient import TestClient
+from app.main import app
+from app.models.database import get_db
+
+@pytest.fixture(name="client")
+def fixture_client(db_session):
+    def _get_db_override():
+        return db_session
+    app.dependency_overrides[get_db] = _get_db_override
+    yield TestClient(app)
+    app.dependency_overrides.clear()
+
+
+def test_crud_users(client, db_session):
+    # Fetch default
+    res = client.get("/api/v1/users")
+    assert res.status_code == 200
+    users = res.json()
+    assert len(users) == 1
+    assert users[0]["email"] == "manager@corporatefranchise.com"
+
+    # Create new user
+    new_user_id = str(uuid.uuid4())
+    create_payload = {
+        "id": new_user_id,
+        "first_name": "John",
+        "last_name": "Staff",
+        "email": "john@staff.com",
+        "phone": "+12345",
+        "tier": "free",
+        "organization_id": "00000000-0000-0000-0000-000000000000"
+    }
+    res = client.post("/api/v1/users", json=create_payload)
+    assert res.status_code == 200
+    created = res.json()
+    assert created["first_name"] == "John"
+    assert created["id"] == new_user_id
+
+    # Update user
+    update_payload = {"first_name": "Johnny", "tier": "premium"}
+    res = client.put(f"/api/v1/users/{new_user_id}", json=update_payload)
+    assert res.status_code == 200
+    updated = res.json()
+    assert updated["first_name"] == "Johnny"
+    assert updated["tier"] == "premium"
+
+    # Delete default user -> Should be BLOCKED
+    default_user_id = "00000000-0000-0000-0000-000000000001"
+    res = client.delete(f"/api/v1/users/{default_user_id}")
+    assert res.status_code == 400
+    assert "default" in res.json()["detail"].lower()
+
+    # Delete custom user -> Success
+    res = client.delete(f"/api/v1/users/{new_user_id}")
+    assert res.status_code == 200
+    assert res.json()["status"] == "deleted"
+
+
+def test_crud_organizations(client, db_session):
+    # List organizations
+    res = client.get("/api/v1/organizations")
+    assert res.status_code == 200
+    orgs = res.json()
+    assert len(orgs) == 1
+    assert orgs[0]["name"] == "Default Org"
+
+    # Create Org
+    res = client.post("/api/v1/organizations", json={"name": "Smile Group"})
+    assert res.status_code == 200
+    created = res.json()
+    new_org_id = created["id"]
+    assert created["name"] == "Smile Group"
+
+    # Update Org
+    res = client.put(f"/api/v1/organizations/{new_org_id}", json={"name": "Smile Dental Co"})
+    assert res.status_code == 200
+    assert res.json()["name"] == "Smile Dental Co"
+
+    # Delete default Org -> Should be BLOCKED
+    default_org_id = "00000000-0000-0000-0000-000000000000"
+    res = client.delete(f"/api/v1/organizations/{default_org_id}")
+    assert res.status_code == 400
+    assert "default" in res.json()["detail"].lower()
+
+    # Delete custom Org -> Success
+    res = client.delete(f"/api/v1/organizations/{new_org_id}")
+    assert res.status_code == 200
+    assert res.json()["status"] == "deleted"
+
+
+def test_crud_businesses(client, db_session):
+    # Insert a business first
+    biz = Business(
+        organization_id=uuid.UUID("00000000-0000-0000-0000-000000000000"),
+        name="Test Biz",
+        domain="testbiz.com",
+        industry="medical",
+        primary_city="Miami",
+        primary_state="FL",
+        country="US",
+        service_focuses=["focus1"],
+        target_suburbs=["suburb1"]
+    )
+    db_session.add(biz)
+    db_session.commit()
+    db_session.refresh(biz)
+
+    # List businesses
+    res = client.get("/api/v1/businesses")
+    assert res.status_code == 200
+    assert len(res.json()) == 1
+
+    # Update business
+    res = client.put(f"/api/v1/businesses/{biz.id}", json={
+        "name": "Updated Test Biz",
+        "service_focuses": ["focus1", "focus2"]
+    })
+    assert res.status_code == 200
+    updated = res.json()
+    assert updated["name"] == "Updated Test Biz"
+    assert updated["service_focuses"] == ["focus1", "focus2"]
+
+    # Delete business
+    res = client.delete(f"/api/v1/businesses/{biz.id}")
+    assert res.status_code == 200
+    assert res.json()["status"] == "deleted"
+
+
+def test_crud_scans(client, db_session):
+    # Insert business
+    biz = Business(
+        id=uuid.uuid4(),
+        organization_id=uuid.UUID("00000000-0000-0000-0000-000000000000"),
+        name="Scanned Shop",
+        domain="shop.com",
+        industry="retail",
+        primary_city="Austin",
+        primary_state="TX",
+        country="US"
+    )
+    db_session.add(biz)
+    db_session.commit()
+
+    # Create scan manually
+    res = client.post("/api/v1/scans", json={
+        "business_id": str(biz.id)
+    })
+    assert res.status_code == 200
+    scan_id = res.json()["id"]
+
+    # Query scans with limits/offset
+    res = client.get("/api/v1/scans?limit=5&offset=0")
+    assert res.status_code == 200
+    assert len(res.json()) == 1
+    assert res.json()[0]["id"] == scan_id
+
+    # Update scan
+    res = client.put(f"/api/v1/scans/{scan_id}", json={
+        "overall_score": 85,
+        "status": "complete",
+        "summary": {"score": 85},
+        "recommendations": [{"issue": "no citation", "recommendation": "add schemas"}]
+    })
+    assert res.status_code == 200
+    updated = res.json()
+    assert updated["overall_score"] == 85
+    assert updated["status"] == "complete"
+
+    # Delete scan
+    res = client.delete(f"/api/v1/scans/{scan_id}")
+    assert res.status_code == 200
+    assert res.json()["status"] == "deleted"
+
+
+def test_crud_scan_results(client, db_session):
+    # Insert business and scan
+    biz = Business(
+        id=uuid.uuid4(),
+        organization_id=uuid.UUID("00000000-0000-0000-0000-000000000000"),
+        name="Analyzed Shop",
+        domain="analyzed.com",
+        industry="retail",
+        primary_city="Austin",
+        primary_state="TX",
+        country="US"
+    )
+    db_session.add(biz)
+    db_session.commit()
+
+    scan = Scan(
+        business_id=biz.id,
+        user_id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
+        status="complete",
+        overall_score=70
+    )
+    db_session.add(scan)
+    db_session.commit()
+
+    # Create scan result manually
+    res = client.post("/api/v1/scan_results", json={
+        "scan_id": str(scan.id),
+        "provider": "gemini",
+        "status": "yellow",
+        "score": 60,
+        "rank_position": 2,
+        "mentioned": True,
+        "actionable": True,
+        "domain_match": False,
+        "reason": "somewhat present",
+        "error": None
+    })
+    assert res.status_code == 200
+    res_id = res.json()["id"]
+
+    # Query scan results with pagination and filters
+    res = client.get(f"/api/v1/scan_results?limit=10&provider=gemini&mentioned=true")
+    assert res.status_code == 200
+    results = res.json()
+    assert len(results) == 1
+    assert results[0]["id"] == res_id
+
+    # Update result
+    res = client.put(f"/api/v1/scan_results/{res_id}", json={
+        "score": 90,
+        "status": "green"
+    })
+    assert res.status_code == 200
+    assert res.json()["score"] == 90
+    assert res.json()["status"] == "green"
+
+    # Delete result
+    res = client.delete(f"/api/v1/scan_results/{res_id}")
+    assert res.status_code == 200
+    assert res.json()["status"] == "deleted"
+
