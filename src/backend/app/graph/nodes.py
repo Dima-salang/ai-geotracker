@@ -6,40 +6,44 @@ from typing import Optional
 
 import litellm
 
-from app.graph.state import ProviderResult, ScanState
+from app.graph.state import ProviderResult, ScanState, ScanRequest
 from app.services.provider_service import ProviderService
 
 DOMAIN_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9\-]*\.[a-zA-Z]{2,}$")
 
 CLASSIFY_PROMPT = """You are a business research assistant. Research this business online and return structured data in JSON only.
 
-Business Name: {business_name}
+Business Name (if provided): {business_name}
 Domain: {domain}
-Industry (user-specified): {industry}
-Location: {city}, {state}, {country}
+Industry (if provided): {industry}
+Location (if provided): {city}, {state}, {country}
+
+Instructions:
+1. Research the given Domain online to determine the official Business Name, its primary Industry, physical Headquarters Location (City, State, Country), and whether it is a purely virtual/online business (SaaS, e-commerce, global platform with no primary local walk-in storefront or local service radius).
+2. Set "is_virtual" to true if it is a purely online/virtual business, otherwise false.
+3. If "is_virtual" is true, set physical location fields but generate general/location-free search prompts (e.g. "Best subscription billing platform", "Top rated online accounting software"). If "is_virtual" is false, generate local-specific search prompts with physical location terms.
 
 Use Google Search to verify this business and understand its market. Return ONLY valid JSON:
 {{
-  "domain_verified": true/false,
+  "business_name": "the official business name (researched or verified)",
   "industry": "refined industry category",
-  "radius_miles": integer,
+  "primary_city": "main physical city",
+  "primary_state": "main physical state/region",
+  "country": "main physical country",
+  "is_virtual": true/false,
+  "domain_verified": true/false,
+  "radius_miles": integer (set to 0 if is_virtual is true, or typical local search radius 5-100 if local),
   "default_services": ["service1", "service2"],
   "business_alias": "alternative name or empty",
   "prompts": ["prompt1", "prompt2", "prompt3"]
 }}
 
-Rules:
-- domain_verified: does domain match business name?
-- industry: refine user-specified industry. broad but accurate.
-- radius_miles: typical local search radius. 5-100.
-- default_services: 3-8 common services for this business type.
-- prompts: generate 8-15 realistic human search prompts. MUST:
-  * Vary intent (general recommendation, service-specific, trust-based)
-  * Use natural human language (not robotic)
-  * Include geography (city + nearby suburbs/areas)
-  * Include specific services from default_services
-  * Avoid keyword stuffing
-  * Example: "Best Invisalign dentist in Houston", "Trusted dental implants near Katy"
+Rules for prompts:
+- Generate 8-15 realistic human search queries/prompts. Must vary intent (general recommendation, service-specific, trust-based).
+- Use natural human language (not robotic).
+- If local, MUST include geography (city + nearby suburbs/areas). If virtual, MUST NOT include local geography.
+- Include specific services from default_services.
+- Avoid keyword stuffing.
 """
 
 PROVIDER_CONFIG: list[dict] = [
@@ -58,19 +62,30 @@ def validate_input(state: ScanState) -> dict:
     if not DOMAIN_RE.match(req.domain):
         errors.append(f"Invalid domain format: {req.domain}")
 
-    if not req.business_name.strip():
-        errors.append("Business name is required")
+    # Domain-only scan is allowed when all other fields are empty
+    is_domain_only = (
+        not req.business_name.strip()
+        and not req.industry.strip()
+        and not req.primary_city.strip()
+        and not req.primary_state.strip()
+        and not req.country.strip()
+    )
 
-    if not req.industry.strip():
-        errors.append("Industry is required")
+    if not is_domain_only:
+        if not req.business_name.strip():
+            errors.append("Business name is required")
 
-    if not req.primary_city.strip():
-        errors.append("Primary city is required")
+        if not req.industry.strip():
+            errors.append("Industry is required")
 
-    if not req.country.strip():
-        errors.append("Country is required")
+        if not req.primary_city.strip():
+            errors.append("Primary city is required")
+
+        if not req.country.strip():
+            errors.append("Country is required")
 
     return {"errors": errors}
+
 
 
 def _fallback_prompts(industry: str, city: str, services: list[str]) -> list[str]:
@@ -139,6 +154,18 @@ async def classify_business(state: ScanState) -> dict:
         industry = data.get("industry", req.industry.lower())
         services = data.get("default_services", [])
         llm_prompts = data.get("prompts", [])
+        is_virtual = data.get("is_virtual", False)
+
+        updated_req = ScanRequest(
+            business_name=data.get("business_name") or req.business_name or req.domain,
+            domain=req.domain,
+            industry=industry,
+            primary_city=data.get("primary_city") or req.primary_city or "",
+            primary_state=data.get("primary_state") or req.primary_state or "",
+            country=data.get("country") or req.country or "",
+            service_focuses=services if services else req.service_focuses,
+            target_suburbs=req.target_suburbs
+        )
 
         return {
             "classification": {
@@ -146,21 +173,41 @@ async def classify_business(state: ScanState) -> dict:
                 "radius_miles": data.get("radius_miles", 25),
                 "default_services": services,
                 "domain_verified": data.get("domain_verified", False),
+                "is_virtual": is_virtual,
             },
-            "prompts": llm_prompts if llm_prompts else _fallback_prompts(industry, req.primary_city, services),
+            "prompts": llm_prompts if llm_prompts else _fallback_prompts(industry, updated_req.primary_city or "unknown", services),
+            "request": updated_req,
         }
 
     except Exception:
         fb_services = req.service_focuses.copy()
+        business_name = req.business_name or req.domain
+        fallback_city = req.primary_city or "unknown"
+        fallback_industry = req.industry or "local service"
+
+        updated_req = ScanRequest(
+            business_name=business_name,
+            domain=req.domain,
+            industry=fallback_industry,
+            primary_city=fallback_city,
+            primary_state=req.primary_state,
+            country=req.country or "US",
+            service_focuses=fb_services,
+            target_suburbs=req.target_suburbs
+        )
+
         return {
             "classification": {
-                "industry": req.industry.lower(),
+                "industry": fallback_industry,
                 "radius_miles": 25,
                 "default_services": fb_services,
                 "domain_verified": False,
+                "is_virtual": False,
             },
-            "prompts": _fallback_prompts(req.industry.lower(), req.primary_city, fb_services),
+            "prompts": _fallback_prompts(fallback_industry, fallback_city, fb_services),
+            "request": updated_req,
         }
+
 
 
 def geo_expand(state: ScanState) -> dict:

@@ -3,14 +3,15 @@ from pydantic import BaseModel
 
 
 class ScanRequest(BaseModel):
-    business_name: str
     domain: str
-    industry: str
-    primary_city: str
-    primary_state: str
-    country: str
+    business_name: str = ""
+    industry: str = ""
+    primary_city: str = ""
+    primary_state: str = ""
+    country: str = ""
     service_focuses: list[str] = []
     target_suburbs: list[str] = []
+
 
 
 class ProviderResult(BaseModel):
