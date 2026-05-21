@@ -1,0 +1,178 @@
+@import "tailwindcss";
+
+/* ──────────────────────────────────────────────────────────
+   GeoTracker Design System — Technical Retro-Futurist
+   Neo-Brutalist Light Mode / Print-to-Web
+   Source of truth: DESIGN.md
+   ────────────────────────────────────────────────────────── */
+
+:root {
+  /* ── Base Surfaces ── */
+  --background: #faf9f6;        /* Off-white / cream — vintage paper */
+  --background-alt: #eaeaea;    /* Secondary light gray panels */
+  --foreground: #111111;        /* Near-black for max legibility */
+  --surface: #faf9f6;
+  --surface-container-low: #f4f4ef;
+  --surface-container: #eeeee9;
+  --surface-container-high: #e8e8e3;
+
+  /* ── Text ── */
+  --text-primary: #000000;
+  --text-muted: #666666;
+  --text-on-accent: #ffffff;
+
+  /* ── Accent ── */
+  --primary: #0055ff;           /* Electric Blue */
+  --primary-container: #0066ff;
+  --primary-hover: #0044cc;
+  --primary-foreground: #ffffff;
+
+  /* ── Structure ── */
+  --border: #e5e5e5;            /* Faint gray structural lines */
+  --border-strong: rgba(0, 0, 0, 0.1);
+  --outline: #727687;
+
+  /* ── Radius (zero) ── */
+  --radius: 0px;
+
+  color-scheme: light;
+}
+
+/* ── Tailwind v4 Theme Registration ── */
+@theme {
+  --font-display: var(--font-space-grotesk), "Space Grotesk", sans-serif;
+  --font-sans: var(--font-inter), "Inter", sans-serif;
+  --font-mono: var(--font-jetbrains-mono), "JetBrains Mono", monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-container-low: var(--surface-container-low);
+  --color-surface-container: var(--surface-container);
+  --color-surface-container-high: var(--surface-container-high);
+  --color-primary: var(--primary);
+  --color-primary-container: var(--primary-container);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-border: var(--border);
+  --color-outline: var(--outline);
+  --color-text-muted: var(--text-muted);
+
+  --radius-lg: 0px;
+  --radius-md: 0px;
+  --radius-sm: 0px;
+}
+
+/* ── Base ── */
+body {
+  font-family: var(--font-sans), sans-serif;
+  background-color: var(--background);
+  color: var(--foreground);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Blueprint Background Grid ── */
+.blueprint-bg {
+  background-image:
+    linear-gradient(rgba(0, 0, 0, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.03) 1px, transparent 1px);
+  background-size: 50px 50px;
+  background-repeat: repeat;
+}
+
+/* ── Neon Aura (Electric Blue glow behind hero asset) ── */
+.neon-aura {
+  filter: drop-shadow(0 0 45px rgba(0, 85, 255, 0.35))
+          drop-shadow(0 0 120px rgba(0, 85, 255, 0.15));
+}
+
+/* ── Scanline Animation ── */
+.scanline {
+  width: 100%;
+  height: 2px;
+  background: rgba(0, 85, 255, 0.12);
+  position: absolute;
+  top: 0;
+  animation: scan 4s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes scan {
+  0%   { top: 0; }
+  100% { top: 100%; }
+}
+
+/* ── Terminal Flicker (footer links) ── */
+.terminal-flicker:hover {
+  animation: flicker 0.1s infinite;
+}
+
+@keyframes flicker {
+  0%   { opacity: 1; }
+  50%  { opacity: 0.75; }
+  100% { opacity: 0.9; }
+}
+
+/* ── Scroll-triggered reveal using Scroll-Driven Animations ── */
+@supports (animation-timeline: view()) {
+  .reveal-on-scroll {
+    animation: reveal-fade linear both;
+    animation-timeline: view();
+    animation-range: entry 0% entry 30%;
+  }
+
+  @keyframes reveal-fade {
+    from {
+      opacity: 0;
+      transform: translateY(24px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
+
+/* Fallback: elements are visible if scroll-driven animations not supported */
+@supports not (animation-timeline: view()) {
+  .reveal-on-scroll {
+    opacity: 1;
+  }
+}
+
+/* ── Reduced Motion ── */
+@media (prefers-reduced-motion: reduce) {
+  .scanline,
+  .terminal-flicker:hover {
+    animation: none !important;
+  }
+
+  .reveal-on-scroll {
+    animation: none !important;
+    opacity: 1;
+  }
+}
+
+/* ── Custom Scrollbar ── */
+body {
+  scrollbar-color: #cbd5e1 #f4f4ef;
+}
+
+@supports not (scrollbar-color: auto) {
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+  }
+  ::-webkit-scrollbar-track {
+    background: #f4f4ef;
+  }
+}
+
+/* ── Selection ── */
+::selection {
+  background-color: var(--primary);
+  color: var(--text-on-accent);
+}
