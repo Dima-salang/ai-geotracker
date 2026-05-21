@@ -61,6 +61,22 @@ class TestValidateInput:
 
         assert any("name" in e.lower() for e in result["errors"])
 
+    def test_accepts_domain_only_request(self):
+        req = ScanRequest(
+            business_name="",
+            domain="exampledental.com",
+            industry="",
+            primary_city="",
+            primary_state="",
+            country="",
+        )
+        state = ScanState(request=req)
+
+        result = validate_input(state)
+
+        assert len(result["errors"]) == 0
+
+
 
 class TestClassifyBusiness:
     @pytest.mark.asyncio
@@ -104,6 +120,54 @@ class TestClassifyBusiness:
         assert "prompts" in result
         assert len(result["prompts"]) == 3
         assert any("Houston" in p for p in result["prompts"])
+
+    @pytest.mark.asyncio
+    async def test_classify_domain_only_virtual_business(self, mocker):
+        mock_resp = mocker.MagicMock()
+        mock_resp.choices = [mocker.MagicMock()]
+        mock_resp.choices[0].message.content = json.dumps({
+            "business_name": "Stripe",
+            "industry": "payment processing",
+            "primary_city": "San Francisco",
+            "primary_state": "California",
+            "country": "USA",
+            "is_virtual": True,
+            "domain_verified": True,
+            "radius_miles": 0,
+            "default_services": ["payment gateway", "subscription billing"],
+            "business_alias": "Stripe Inc",
+            "prompts": [
+                "Best payment processing api",
+                "Subscription billing gateway for saas",
+            ],
+        })
+
+        mocker.patch(
+            "app.services.provider_service.litellm.acompletion",
+            return_value=mock_resp,
+        )
+
+        req = ScanRequest(
+            business_name="",
+            domain="stripe.com",
+            industry="",
+            primary_city="",
+            primary_state="",
+            country="",
+        )
+        state = ScanState(request=req)
+
+        result = await classify_business(state)
+
+        assert "classification" in result
+        assert result["classification"]["industry"] == "payment processing"
+        assert result["classification"]["is_virtual"] is True
+        assert "request" in result
+        updated_req = result["request"]
+        assert updated_req.business_name == "Stripe"
+        assert updated_req.primary_city == "San Francisco"
+        assert updated_req.primary_state == "California"
+        assert updated_req.country == "USA"
 
     @pytest.mark.asyncio
     async def test_falls_back_when_llm_fails(self, mocker):
