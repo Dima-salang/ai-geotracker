@@ -24,6 +24,8 @@ class ProviderResult(BaseModel):
     domain_match: bool = False
     reason: str = ""
     error: Optional[str] = None
+    prompt_results: list[dict] = []
+
 
 
 class ScanState(BaseModel):
