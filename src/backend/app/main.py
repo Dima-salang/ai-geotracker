@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
 from app.models.database import SessionLocal, engine, Base
-from app.models.schema import Organization, User, ProviderConfig
+from app.models.schema import Organization, User, ProviderConfig, SystemConfig
 from app.api.v1.endpoints import router as api_router
 
 # Configure standard Python logging
@@ -76,6 +76,17 @@ def seed_database():
                 config.api_key = ""  # Trigger setter (encrypts empty string)
                 db.add(config)
         db.commit()
+
+        # 4. Create Default SystemConfigs if empty
+        existing_serper_key = db.query(SystemConfig).filter(SystemConfig.key == "serper_api_key").first()
+        if not existing_serper_key:
+            serper_config = SystemConfig(
+                key="serper_api_key",
+                is_encrypted=True
+            )
+            serper_config.set_value("", encrypt=True)
+            db.add(serper_config)
+            db.commit()
     except Exception as e:
         print(f"Error seeding database: {e}")
     finally:
