@@ -1,4 +1,5 @@
 import uuid
+import json
 from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -9,7 +10,12 @@ from app.graph.state import ScanRequest
 from app.models.database import get_db
 from app.models.schema import (
     Organization, Business, Scan, ProviderConfig,
-    ProviderConfigCreate, BusinessCreate
+    ProviderConfigCreate, BusinessCreate,
+    User, UserCreate, UserRead, UserUpdate,
+    OrganizationCreate, OrganizationRead, OrganizationUpdate,
+    BusinessRead, BusinessUpdate,
+    ScanCreate, ScanRead, ScanUpdate,
+    ScanResult, ScanResultCreate, ScanResultRead, ScanResultUpdate
 )
 from app.services.user_service import UserService
 from app.services.provider_service import ProviderService
@@ -35,6 +41,26 @@ async def run_scan(req: ScanRequest):
 @router.get("/providers")
 def get_providers(db: Session = Depends(get_db)):
     """Retrieve all active settings for AI Engine audits, masking credentials."""
+    from app.services.provider_service import DEFAULT_PROVIDERS
+    
+    dirty = False
+    for provider, defaults in DEFAULT_PROVIDERS.items():
+        existing = db.query(ProviderConfig).filter(ProviderConfig.provider == provider).first()
+        if not existing:
+            config = ProviderConfig(
+                provider=provider,
+                model=defaults["model"],
+                api_base=defaults["api_base"],
+                is_active=True,
+                timeout_seconds=defaults["timeout"]
+            )
+            config.api_key = ""
+            db.add(config)
+            dirty = True
+            
+    if dirty:
+        db.commit()
+        
     configs = db.query(ProviderConfig).all()
     return [
         {
@@ -65,30 +91,135 @@ def update_provider_settings(data: ProviderConfigCreate, db: Session = Depends(g
     }
 
 
-@router.get("/businesses")
-def list_businesses(db: Session = Depends(get_db)):
-    """List all registered business profiles."""
-    return db.query(Business).order_by(Business.created_at.desc()).all()
+@router.delete("/providers/{id}")
+def delete_provider(id: uuid.UUID, db: Session = Depends(get_db)):
+    """Delete a custom AI engine provider config."""
+    config = db.query(ProviderConfig).filter(ProviderConfig.id == id).first()
+    if not config:
+        raise HTTPException(status_code=404, detail="Provider not found")
+    db.delete(config)
+    db.commit()
+    return {"status": "deleted"}
 
 
-@router.post("/businesses")
+@router.get("/users", response_model=List[UserRead])
+def list_users(limit: int = 100, offset: int = 0, db: Session = Depends(get_db)):
+    """List all registered users."""
+    return UserService.list_users(db, limit=limit, offset=offset)
+
+
+@router.post("/users", response_model=UserRead)
+def create_user(data: UserCreate, db: Session = Depends(get_db)):
+    """Create a new user profile."""
+    existing = UserService.get_user(db, data.id)
+    if existing:
+        raise HTTPException(status_code=400, detail="User with this ID already exists")
+    return UserService.create_user(db, data)
+
+
+@router.put("/users/{id}", response_model=UserRead)
+def update_user(id: uuid.UUID, data: UserUpdate, db: Session = Depends(get_db)):
+    """Update a user's details."""
+    user = UserService.update_user(db, id, data)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+
+
+@router.delete("/users/{id}")
+def delete_user(id: uuid.UUID, db: Session = Depends(get_db)):
+    """Delete a user profile, blocking default manager."""
+    if id == uuid.UUID("00000000-0000-0000-0000-000000000001"):
+        raise HTTPException(status_code=400, detail="Cannot delete default manager profile")
+    
+    success = UserService.delete_user(db, id)
+    if not success:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"status": "deleted"}
+
+
+@router.get("/organizations", response_model=List[OrganizationRead])
+def list_organizations(limit: int = 100, offset: int = 0, db: Session = Depends(get_db)):
+    """List all parent franchise organizations."""
+    return UserService.list_organizations(db, limit=limit, offset=offset)
+
+
+@router.post("/organizations", response_model=OrganizationRead)
+def create_organization(data: OrganizationCreate, db: Session = Depends(get_db)):
+    """Create a new parent franchise organization."""
+    return UserService.create_organization(db, name=data.name)
+
+
+@router.put("/organizations/{id}", response_model=OrganizationRead)
+def update_organization(id: uuid.UUID, data: OrganizationUpdate, db: Session = Depends(get_db)):
+    """Update an organization's name."""
+    org = UserService.update_organization(db, id, name=data.name)
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    return org
+
+
+@router.delete("/organizations/{id}")
+def delete_organization(id: uuid.UUID, db: Session = Depends(get_db)):
+    """Delete an organization, blocking default organization."""
+    if id == uuid.UUID("00000000-0000-0000-0000-000000000000"):
+        raise HTTPException(status_code=400, detail="Cannot delete default organization profile")
+    
+    success = UserService.delete_organization(db, id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    return {"status": "deleted"}
+
+
+@router.get("/businesses", response_model=List[BusinessRead])
+def list_businesses(
+    organization_id: Optional[uuid.UUID] = None,
+    limit: int = 100,
+    offset: int = 0,
+    db: Session = Depends(get_db)
+):
+    """List all registered business profiles with optional organization filtering."""
+    return UserService.list_businesses(db, organization_id=organization_id, limit=limit, offset=offset)
+
+
+@router.post("/businesses", response_model=BusinessRead)
 def register_business(data: BusinessCreate, db: Session = Depends(get_db)):
     """Register a new business profile under a specified organization."""
-    org = db.query(Organization).filter(Organization.id == data.organization_id).first()
+    org = UserService.get_organization(db, data.organization_id)
     if not org:
         raise HTTPException(status_code=404, detail="Franchise organization profile not found")
     
-    biz = UserService.create_business(db, data.organization_id, data)
+    return UserService.create_business(db, data.organization_id, data)
+
+
+@router.put("/businesses/{id}", response_model=BusinessRead)
+def update_business(id: uuid.UUID, data: BusinessUpdate, db: Session = Depends(get_db)):
+    """Update storefront metadata."""
+    biz = UserService.update_business(db, id, data)
+    if not biz:
+        raise HTTPException(status_code=404, detail="Business not found")
     return biz
 
 
+@router.delete("/businesses/{id}")
+def delete_business(id: uuid.UUID, db: Session = Depends(get_db)):
+    """Delete business profile."""
+    success = UserService.delete_business(db, id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Business not found")
+    return {"status": "deleted"}
+
+
 @router.get("/scans")
-def list_visibility_reports(business_id: Optional[uuid.UUID] = None, db: Session = Depends(get_db)):
+def list_visibility_reports(
+    business_id: Optional[uuid.UUID] = None,
+    status: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+    db: Session = Depends(get_db)
+):
     """List previous search visibility scan audits."""
-    query = db.query(Scan)
-    if business_id:
-        query = query.filter(Scan.business_id == business_id)
-    scans = query.order_by(Scan.created_at.desc()).all()
+    scans = ScanService.list_scans(db, business_id=business_id, status=status, limit=limit, offset=offset)
     return [
         {
             "id": str(s.id),
@@ -106,10 +237,34 @@ def list_visibility_reports(business_id: Optional[uuid.UUID] = None, db: Session
     ]
 
 
+@router.post("/scans", response_model=ScanRead)
+def create_scan(data: ScanCreate, db: Session = Depends(get_db)):
+    """Create a scan run manually."""
+    return ScanService.create_scan(db, data)
+
+
+@router.put("/scans/{id}", response_model=ScanRead)
+def update_scan(id: uuid.UUID, data: ScanUpdate, db: Session = Depends(get_db)):
+    """Update scan run."""
+    scan = ScanService.update_scan(db, id, data)
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    return scan
+
+
+@router.delete("/scans/{id}")
+def delete_scan(id: uuid.UUID, db: Session = Depends(get_db)):
+    """Delete scan run."""
+    success = ScanService.delete_scan(db, id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    return {"status": "deleted"}
+
+
 @router.get("/scans/{id}")
 def get_visibility_report_details(id: uuid.UUID, db: Session = Depends(get_db)):
     """Get full details of a specific historical scan audit, including per-engine break-downs."""
-    scan = db.query(Scan).filter(Scan.id == id).first()
+    scan = ScanService.get_scan(db, id)
     if not scan:
         raise HTTPException(status_code=404, detail="Visibility audit report not found")
     
@@ -139,8 +294,48 @@ def get_visibility_report_details(id: uuid.UUID, db: Session = Depends(get_db)):
                 "actionable": r.actionable,
                 "domain_match": r.domain_match,
                 "reason": r.reason,
-                "error": r.error
+                "error": r.error,
+                "prompt_results": json.loads(r.raw_response) if r.raw_response else []
             }
             for r in scan.results
         ]
     }
+
+
+@router.get("/scan_results", response_model=List[ScanResultRead])
+def list_scan_results(
+    provider: Optional[str] = None,
+    mentioned: Optional[bool] = None,
+    status: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+    db: Session = Depends(get_db)
+):
+    """List raw scan results with pagination and filtering."""
+    return ScanService.list_scan_results(
+        db, provider=provider, mentioned=mentioned, status=status, limit=limit, offset=offset
+    )
+
+
+@router.post("/scan_results", response_model=ScanResultRead)
+def create_scan_result(data: ScanResultCreate, db: Session = Depends(get_db)):
+    """Add raw scan result manually."""
+    return ScanService.create_scan_result(db, data)
+
+
+@router.put("/scan_results/{id}", response_model=ScanResultRead)
+def update_scan_result(id: uuid.UUID, data: ScanResultUpdate, db: Session = Depends(get_db)):
+    """Update raw scan result."""
+    res = ScanService.update_scan_result(db, id, data)
+    if not res:
+        raise HTTPException(status_code=404, detail="Scan result not found")
+    return res
+
+
+@router.delete("/scan_results/{id}")
+def delete_scan_result(id: uuid.UUID, db: Session = Depends(get_db)):
+    """Delete raw scan result."""
+    success = ScanService.delete_scan_result(db, id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Scan result not found")
+    return {"status": "deleted"}
