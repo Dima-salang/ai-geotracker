@@ -1,4 +1,4 @@
-import json
+import logging
 import uuid
 from datetime import datetime, timezone
 from typing import AsyncGenerator, Optional, List
@@ -11,6 +11,12 @@ from sqlalchemy.orm import Session
 from app.models.database import SessionLocal, engine, Base
 from app.models.schema import Organization, User, ProviderConfig
 from app.api.v1.endpoints import router as api_router
+
+# Configure standard Python logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s - %(message)s"
+)
 
 # Initialize database tables
 Base.metadata.create_all(bind=engine)
