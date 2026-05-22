@@ -1,12 +1,14 @@
 import asyncio
 import json
 import logging
+import os
 import random
 import re
 from typing import Optional
 
 from app.graph.state import ProviderResult, ScanState, ScanRequest
 from app.services.provider_service import ProviderService
+from app.services.search_service import SearchProviders, SearchService
 
 logger = logging.getLogger("app.graph.nodes")
 
@@ -275,6 +277,70 @@ async def classify_business(state: ScanState) -> dict:
             "request": updated_req,
         }
 
+async def web_search(state: ScanState) -> dict:
+    # Resolve the preferred search provider from system configuration or env
+    from app.models.database import SessionLocal
+    from app.models.schema import SystemConfig
+
+    db = SessionLocal()
+    provider = None
+    try:
+        # Check system config for preferred provider
+        pref = db.query(SystemConfig).filter(SystemConfig.key == "search_provider").first()
+        if pref and pref.value:
+            provider_str = pref.value.strip().lower()
+            if provider_str in ("serper", "google"):
+                provider = SearchProviders.SERPER
+            elif provider_str == "ddg":
+                provider = SearchProviders.DDG
+
+        if not provider:
+            # Check if serper_api_key is configured
+            serper_key_cfg = db.query(SystemConfig).filter(SystemConfig.key == "serper_api_key").first()
+            has_serper_key = bool(serper_key_cfg and serper_key_cfg.decrypted_value) or bool(os.getenv("SERPER_API_KEY"))
+            if has_serper_key:
+                provider = SearchProviders.SERPER
+            else:
+                provider = SearchProviders.DDG
+    except Exception as e:
+        logger.warning("Failed to resolve preferred search provider from DB, falling back to DDG: %s", e)
+        provider = SearchProviders.DDG
+    finally:
+        db.close()
+
+    logger.info("Entering web_search with provider: %s", provider)
+    prompts = state.prompts
+    if not prompts:
+        logger.info("No prompts available for web search.")
+        return {"search_results": []}
+
+    search_results = []
+    db = SessionLocal()
+    try:
+        async def run_one_search(prompt: str):
+            try:
+                # we use ddg for now for unli search
+                results = await SearchService.search(prompt, SearchProviders.DDG, db=db)
+                logger.info("Web search results for prompt '%s': %s", prompt, results)
+                return {
+                    "prompt": prompt,
+                    "results": [r.model_dump() for r in results]
+                }
+            except Exception as ex:
+                logger.error("Web search failed for prompt '%s': %s", prompt, ex)
+                return {
+                    "prompt": prompt,
+                    "results": [],
+                    "error": str(ex)
+                }
+
+        tasks = [run_one_search(p) for p in prompts]
+        search_results = await asyncio.gather(*tasks)
+    finally:
+        db.close()
+
+    logger.info("web_search completed - Gathered search results for %d prompts.", len(prompts))
+    return {"search_results": search_results}
 
 
 def geo_expand(state: ScanState) -> dict:
@@ -340,24 +406,59 @@ async def _query_single_prompt(
     domain: str,
     prompt_index: int,
     total_prompts: int,
+    search_results: Optional[list[dict]] = None,
 ) -> dict:
     """
     Fire a single prompt against a provider using pre-resolved litellm call args.
     Routes queries through ProviderService to completely isolate litellm dependencies.
     """
-    system_message = (
-        "You are simulating an AI search engine. When given a search query, respond ONLY with a "
-        "numbered ranked list of the top 10 real businesses or websites that would appear in search results "
-        "for that query. Include business names, brief descriptions, and their website URLs where known. "
-        "Do NOT answer the question or provide advice. ONLY list search results."
-    )
+    grounding_context = ""
+    if search_results and provider_name not in ("perplexity", "gemini_grounding"):
+        prompt_search = next((item for item in search_results if item.get("prompt") == prompt), None)
+        if prompt_search and prompt_search.get("results"):
+            results_list = prompt_search["results"]
+            grounding_context = "\n".join([
+                f"Position: {r.get('position')}\nTitle: {r.get('title')}\nURL: {r.get('link')}\nSnippet: {r.get('snippet')}\n"
+                for r in results_list
+            ])
+
+    if grounding_context:
+        system_message = (
+            "You are a search engine response parser. Below are the actual search engine results for the query. "
+            "Respond ONLY with a numbered ranked list of the top 10 real businesses or websites based on these search results. "
+            "Include the business/website name, a brief description, and their URL as shown in the search results. "
+            "Do NOT answer the question or provide advice. ONLY list the search results exactly as given."
+        )
+        user_message = (
+            f"Query: {prompt}\n\n"
+            f"Actual Search Results:\n{grounding_context}\n\n"
+            f"Ranked List:"
+        )
+        logger.info(
+            "Provider '%s' | Prompt [%d/%d] → Utilizing real web search grounding context.",
+            provider_name, prompt_index + 1, total_prompts
+        )
+    else:
+        system_message = (
+            "You are simulating an AI search engine. When given a search query, respond ONLY with a "
+            "numbered ranked list of the top 10 real businesses or websites that would appear in search results "
+            "for that query. Include business names, brief descriptions, and their website URLs where known. "
+            "Do NOT answer the question or provide advice. ONLY list search results."
+        )
+        user_message = prompt
+        if provider_name not in ("perplexity", "gemini_grounding"):
+            logger.info(
+                "Provider '%s' | Prompt [%d/%d] → No real search grounding available. Simulating.",
+                provider_name, prompt_index + 1, total_prompts
+            )
+
     provider_name_log = provider_name
     try:
         response = await ProviderService.acompletion(
             provider=provider_name,
             messages=[
                 {"role": "system", "content": system_message},
-                {"role": "user", "content": prompt},
+                {"role": "user", "content": user_message},
             ],
             temperature=1.0 if "gemini" in provider_name else 0.1,
             max_tokens=2048,
@@ -391,6 +492,7 @@ async def query_single_provider(
     business_name: str,
     domain: str,
     call_args: Optional[dict] = None,
+    search_results: Optional[list[dict]] = None,
 ) -> ProviderResult:
     """
     Query a single provider with all prompts in parallel.
@@ -417,7 +519,7 @@ async def query_single_provider(
         # Create tasks eagerly so ALL start executing immediately before any is awaited
         tasks = [
             asyncio.create_task(
-                _query_single_prompt(provider_name, call_args, p, business_name, domain, i, len(prompts))
+                _query_single_prompt(provider_name, call_args, p, business_name, domain, i, len(prompts), search_results=search_results)
             )
             for i, p in enumerate(prompts)
         ]
@@ -439,6 +541,7 @@ async def query_single_provider(
 
         return ProviderResult(
             provider=provider_name,
+            model=model,
             status=best["status"],
             score=best["score"],
             rank_position=best["rank_position"],
@@ -454,6 +557,7 @@ async def query_single_provider(
         logger.error("Provider '%s' query pipeline failed: %s", provider_name, str(e), exc_info=True)
         return ProviderResult(
             provider=provider_name,
+            model=model,
             status="red",
             score=0,
             mentioned=False,
@@ -465,6 +569,7 @@ async def query_single_provider(
 async def query_providers(state: ScanState) -> dict:
     req = state.request
     prompts = state.prompts
+    search_results = getattr(state, "search_results", None)
 
     # Load active providers dynamically from database
     from app.models.database import SessionLocal
@@ -492,7 +597,7 @@ async def query_providers(state: ScanState) -> dict:
     )
 
     tasks = [
-        query_single_provider(cfg, prompts, req.business_name, req.domain)
+        query_single_provider(cfg, prompts, req.business_name, req.domain, search_results=search_results)
         for cfg in providers_to_query
     ]
 
