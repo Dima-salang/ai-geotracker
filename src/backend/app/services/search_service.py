@@ -3,7 +3,12 @@ import httpx
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from enum import Enum
 from app.models.schema import SystemConfig
+
+class SearchProviders(str, Enum):
+    SERPER = "serper"
+    DDG = "ddg"
 
 class SearchResult(BaseModel):
     title: str
@@ -14,23 +19,22 @@ class SearchResult(BaseModel):
 
 class SearchRequest(BaseModel):
     prompt: str
-    provider: str  # "serper" or "ddg"
+    provider: SearchProviders
 
 class SearchResponse(BaseModel):
     query: str
-    provider: str
+    provider: SearchProviders
     results: List[SearchResult]
 
 class SearchService:
     @staticmethod
-    async def search(prompt: str, provider: str, db: Optional[Session] = None) -> List[SearchResult]:
+    async def search(prompt: str, provider: SearchProviders, db: Optional[Session] = None) -> List[SearchResult]:
         """
         Orchestrate web search using Serper Dev or DuckDuckGo.
         """
-        provider = provider.lower().strip()
-        if provider == "serper":
+        if provider == SearchProviders.SERPER:
             return await SearchService._search_serper(prompt, db)
-        elif provider == "ddg":
+        elif provider == SearchProviders.DDG:
             return await SearchService._search_ddg(prompt)
         else:
             raise ValueError(f"Unsupported search provider: {provider}")
