@@ -143,7 +143,40 @@ class ProviderConfig(Base):
         self.encrypted_api_key = encrypt_key(plain_text)
 
 
-# ==========================================
+class SystemConfig(Base):
+    __tablename__ = "system_configs"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    key: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    value: Mapped[str] = mapped_column(String, nullable=False)
+    is_encrypted: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), 
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc)
+    )
+
+    @property
+    def decrypted_value(self) -> str:
+        """Helper to return decrypted value if encrypted, else raw."""
+        if self.is_encrypted:
+            from app.models.encryption import decrypt_key
+            return decrypt_key(self.value)
+        return self.value
+
+    def set_value(self, plain_text: str, encrypt: bool = False):
+        """Helper to set and optionally encrypt a value."""
+        if encrypt:
+            from app.models.encryption import encrypt_key
+            self.value = encrypt_key(plain_text)
+            self.is_encrypted = True
+        else:
+            self.value = plain_text
+            self.is_encrypted = False
+
+
+# ==========================================================
 # PYDANTIC SCHEMAS
 # ==========================================
 
@@ -319,4 +352,27 @@ class ScanResultUpdate(BaseModel):
     domain_match: Optional[bool] = None
     reason: Optional[str] = None
     error: Optional[str] = None
+
+
+class SystemConfigBase(BaseModel):
+    key: str
+    is_encrypted: bool = False
+
+
+class SystemConfigCreate(SystemConfigBase):
+    value: str
+
+
+class SystemConfigRead(SystemConfigBase):
+    id: uuid.UUID
+    has_value: bool
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SystemConfigUpdateSchema(BaseModel):
+    key: str
+    value: str
 
