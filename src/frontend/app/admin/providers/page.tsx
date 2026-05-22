@@ -13,18 +13,30 @@ interface ProviderConfig {
   has_key: boolean;
 }
 
+interface SystemConfig {
+  id: string;
+  key: string;
+  is_encrypted: boolean;
+  has_value: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 interface SavingStates {
   [key: string]: boolean;
 }
 
 export default function AdminProviders() {
   const [configs, setConfigs] = useState<ProviderConfig[]>([]);
+  const [systemConfigs, setSystemConfigs] = useState<SystemConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState("");
   const [savingStates, setSavingStates] = useState<SavingStates>({});
+  const [savingSystemStates, setSavingSystemStates] = useState<SavingStates>({});
   
   // Local form state for API keys to allow editing
   const [apiKeys, setApiKeys] = useState<{ [key: string]: string }>({});
+  const [systemKeys, setSystemKeys] = useState<{ [key: string]: string }>({});
   
   // State for the Create Platform form
   const [newProvider, setNewProvider] = useState("");
@@ -142,16 +154,16 @@ export default function AdminProviders() {
   const fetchConfigs = async (silent = false) => {
     if (!silent) {
       setLoading(true);
-      addLog("LOAD: Fetching AI Search Platforms from local database...");
+      addLog("LOAD: Fetching AI Search Platforms and System Configurations from local database...");
     }
     
     try {
+      // 1. Fetch AI Search Platforms
       const response = await fetch(`${BACKEND_URL}/api/v1/providers`);
       if (!response.ok) {
         throw new Error(`HTTP error ${response.status}`);
       }
       const data: ProviderConfig[] = await response.json();
-      
       setConfigs(data);
       
       // Initialize API keys to "__NO_CHANGE__" for platforms that have a key
@@ -160,15 +172,30 @@ export default function AdminProviders() {
         keysMap[c.provider] = c.has_key ? "__NO_CHANGE__" : "";
       });
       setApiKeys(keysMap);
+
+      // 2. Fetch System Configurations
+      const sysResponse = await fetch(`${BACKEND_URL}/api/v1/configs`);
+      if (!sysResponse.ok) {
+        throw new Error(`HTTP error ${sysResponse.status}`);
+      }
+      const sysData: SystemConfig[] = await sysResponse.json();
+      setSystemConfigs(sysData);
+
+      // Initialize system keys to "__NO_CHANGE__" if they have value
+      const sysKeysMap: { [key: string]: string } = {};
+      sysData.forEach((c) => {
+        sysKeysMap[c.key] = c.has_value ? "__NO_CHANGE__" : "";
+      });
+      setSystemKeys(sysKeysMap);
       
       if (!silent) {
-        addLog(`CONFIG: Successfully loaded ${data.length}/${data.length} active AI engine configurations.`);
+        addLog(`CONFIG: Successfully loaded ${data.length} engine configurations and ${sysData.length} system parameters.`);
         addLog("GATEWAY: Dashboard interface synchronized.");
       }
     } catch (err: any) {
       console.error(err);
-      setErrorMsg("Failed to load provider configurations.");
-      addLog(`[ERROR] LOAD_FAIL: Unable to sync AI engine configurations. ${err.message}`);
+      setErrorMsg("Failed to load dashboard configurations.");
+      addLog(`[ERROR] LOAD_FAIL: Unable to sync dashboard configurations. ${err.message}`);
     } finally {
       if (!silent) {
         setLoading(false);
@@ -242,6 +269,51 @@ export default function AdminProviders() {
       addLog(`[ERROR] SYNC_FAIL: Save failed for [${providerName.toUpperCase()}]: ${err.message}`);
     } finally {
       setSavingStates((prev) => ({ ...prev, [providerName]: false }));
+    }
+  };
+
+  // Save a single system config key
+  const handleSaveSystemConfig = async (keyName: string) => {
+    const config = systemConfigs.find((c) => c.key === keyName);
+    if (!config) return;
+
+    setSavingSystemStates((prev) => ({ ...prev, [keyName]: true }));
+    addLog(`SAVE: Initiating synchronization for System Configuration [${keyName.toUpperCase()}]...`);
+
+    const valueVal = systemKeys[keyName] || "";
+
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/v1/configs`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          key: keyName,
+          value: valueVal,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error ${response.status}`);
+      }
+
+      const updated = await response.json();
+      
+      addLog(`[SUCCESS] SYNC: System Configuration [${keyName.toUpperCase()}] successfully saved.`);
+      
+      // Update has_value state and reset system API key field to "__NO_CHANGE__" if needed
+      setSystemConfigs((prev) =>
+        prev.map((c) => (c.key === keyName ? { ...c, has_value: updated.has_value } : c))
+      );
+      if (updated.has_value) {
+        setSystemKeys((prev) => ({ ...prev, [keyName]: "__NO_CHANGE__" }));
+      }
+    } catch (err: any) {
+      console.error(err);
+      addLog(`[ERROR] SYNC_FAIL: Save failed for [${keyName.toUpperCase()}]: ${err.message}`);
+    } finally {
+      setSavingSystemStates((prev) => ({ ...prev, [keyName]: false }));
     }
   };
 
@@ -357,7 +429,91 @@ export default function AdminProviders() {
             </div>
 
           ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-12">
+            <div className="space-y-8 mb-12">
+              {/* Dedicated External Search Integrations Section */}
+              <div className="border border-primary/20 bg-background/80 backdrop-blur-sm p-6 md:p-8 hover:border-primary/45 transition-all duration-300 relative overflow-hidden">
+                {/* Micro-glow effect */}
+                <div className="absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full blur-3xl -z-10"></div>
+                
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 border-b border-foreground/10 pb-6 mb-6">
+                  <div>
+                    <div className="flex items-center gap-3 mb-2">
+                      <span className="font-mono text-[10px] bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 uppercase font-bold tracking-tighter animate-pulse">
+                        SYSTEM INTEGRATION
+                      </span>
+                      <span className="font-mono text-[10px] bg-foreground text-background px-2 py-0.5 uppercase font-bold tracking-tighter">
+                        GLOBAL SEARCH INDEX
+                      </span>
+                    </div>
+                    <h2 className="font-display text-2xl font-bold uppercase tracking-tight text-foreground">
+                      External Search Integrations
+                    </h2>
+                    <p className="font-sans text-xs text-text-muted mt-2 max-w-2xl leading-relaxed">
+                      Configure third-party API indexes that allow our autonomous agents to gather real-time web search grounding and brand citation signals.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                  <div className="md:col-span-2 space-y-4">
+                    <h3 className="font-mono text-xs font-bold text-foreground uppercase tracking-wider">
+                      Google Serper Dev Integration
+                    </h3>
+                    <p className="font-sans text-xs text-text-muted leading-relaxed">
+                      Used by parallel LLM audits to query Google Search index pages. If not configured, agents will fall back to DuckDuckGo parsing, which is slower and rate-limited.
+                    </p>
+                    
+                    <div className="pt-2">
+                      <label className="font-mono text-[10px] text-text-muted uppercase block mb-1.5 font-bold tracking-wider">
+                        Serper Dev API Key
+                      </label>
+                      <div className="relative max-w-xl">
+                        <input
+                          type="password"
+                          value={systemKeys["serper_api_key"] || ""}
+                          onChange={(e) => setSystemKeys(prev => ({ ...prev, serper_api_key: e.target.value }))}
+                          className="w-full bg-transparent border-b border-foreground/20 focus:border-primary focus:outline-none font-mono text-xs py-2 pr-20 text-foreground"
+                          placeholder={systemConfigs.find(c => c.key === "serper_api_key")?.has_value ? "••••••••••••••••" : "Configure Serper API Key"}
+                        />
+                        {systemConfigs.find(c => c.key === "serper_api_key")?.has_value && systemKeys["serper_api_key"] === "__NO_CHANGE__" && (
+                          <span className="absolute right-0 top-2 font-mono text-[8px] bg-primary/10 text-primary border border-primary/20 px-1 py-0.5 uppercase font-bold tracking-tighter">
+                            SECURED (FERNET)
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col justify-end items-end md:border-l md:border-foreground/10 md:pl-8">
+                    <button
+                      onClick={() => handleSaveSystemConfig("serper_api_key")}
+                      disabled={savingSystemStates["serper_api_key"]}
+                      className="w-full md:w-auto font-mono text-xs tracking-tighter bg-primary text-white px-8 py-3.5 hover:bg-primary-hover disabled:bg-primary/50 transition-all uppercase font-bold flex items-center justify-center gap-2"
+                    >
+                      {savingSystemStates["serper_api_key"] ? (
+                        <>
+                          <span className="inline-block w-2 h-2 bg-white animate-ping"></span>
+                          SYNCHRONIZING...
+                        </>
+                      ) : (
+                        "SAVE_SEARCH_CREDENTIALS"
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Title separator for AI engines */}
+              <div className="pt-4 border-t border-foreground/10">
+                <span className="font-mono text-xs text-primary mb-2 uppercase tracking-[0.2em] block">
+                  PARALLEL MULTI-ENGINE COMPLETIONS
+                </span>
+                <h2 className="font-display text-2xl font-bold uppercase tracking-tight text-foreground">
+                  LLM Provider Registries
+                </h2>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
               {configs.map((config) => {
                 const details = getPlatformDetails(config.provider);
                 const isSaving = savingStates[config.provider] || false;
@@ -663,6 +819,7 @@ export default function AdminProviders() {
                 )}
               </div>
             </div>
+          </div>
           )}
         </div>
 
