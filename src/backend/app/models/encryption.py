@@ -35,5 +35,9 @@ def decrypt_key(encrypted_text: str) -> str:
     """Decrypt an encrypted API key back to plain text."""
     if not encrypted_text:
         return ""
-    decrypted_bytes = cipher_suite.decrypt(encrypted_text.encode())
-    return decrypted_bytes.decode()
+    try:
+        decrypted_bytes = cipher_suite.decrypt(encrypted_text.encode())
+        return decrypted_bytes.decode()
+    except Exception:
+        return ""
+

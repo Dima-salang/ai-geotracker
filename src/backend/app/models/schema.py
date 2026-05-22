@@ -34,6 +34,7 @@ class User(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     organization_id: Mapped[Optional[uuid.UUID]] = mapped_column(Uuid, ForeignKey("organizations.id"), nullable=True)
+    role: Mapped[str] = mapped_column(String, default="user")
     first_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     last_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     phone: Mapped[Optional[str]] = mapped_column(String, nullable=True)
@@ -225,7 +226,7 @@ class ScanResultBase(BaseModel):
 
 
 class ScanResultCreate(ScanResultBase):
-    pass
+    scan_id: uuid.UUID
 
 
 class ScanResultRead(ScanResultBase):
@@ -277,3 +278,45 @@ class ProviderConfigRead(ProviderConfigBase):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class OrganizationUpdate(BaseModel):
+    name: Optional[str] = None
+
+
+class UserUpdate(BaseModel):
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    tier: Optional[str] = None
+
+
+class BusinessUpdate(BaseModel):
+    name: Optional[str] = None
+    domain: Optional[str] = None
+    industry: Optional[str] = None
+    primary_city: Optional[str] = None
+    primary_state: Optional[str] = None
+    country: Optional[str] = None
+    service_focuses: Optional[List[str]] = None
+    target_suburbs: Optional[List[str]] = None
+
+
+class ScanUpdate(BaseModel):
+    overall_score: Optional[int] = None
+    status: Optional[str] = None
+    summary: Optional[Dict[str, Any]] = None
+    recommendations: Optional[List[Dict[str, Any]]] = None
+
+
+class ScanResultUpdate(BaseModel):
+    status: Optional[str] = None
+    score: Optional[int] = None
+    rank_position: Optional[int] = None
+    mentioned: Optional[bool] = None
+    actionable: Optional[bool] = None
+    domain_match: Optional[bool] = None
+    reason: Optional[str] = None
+    error: Optional[str] = None
+
