@@ -320,9 +320,14 @@ class TestGraph:
         assert graph is not None
         assert "validate" in graph.nodes
         assert "classify" in graph.nodes
+        assert "geo_expand" in graph.nodes
+        # query_providers and score are now handled by ScanService, not the graph
+        assert "query_providers" not in graph.nodes
+        assert "score" not in graph.nodes
 
     @pytest.mark.asyncio
     async def test_full_scan_pipeline(self, mocker):
+        """Graph now ends at geo_expand. It should return prompts from classify."""
         classify_resp = mocker.MagicMock()
         classify_resp.choices = [mocker.MagicMock()]
         classify_resp.choices[0].message.content = json.dumps({
@@ -333,24 +338,9 @@ class TestGraph:
             "prompts": ["Best dentist in Houston", "Invisalign in Katy"],
         })
 
-        provider_resp = mocker.MagicMock()
-        provider_resp.choices = [mocker.MagicMock()]
-        provider_resp.choices[0].message.content = (
-            "I recommend Test Dental in Houston."
-        )
-
-        call_count = 0
-
-        async def mock_llm(model, messages, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                return classify_resp
-            return provider_resp
-
         mocker.patch(
             "app.services.provider_service.litellm.acompletion",
-            side_effect=mock_llm,
+            return_value=classify_resp,
         )
 
         req = ScanRequest(
@@ -366,13 +356,16 @@ class TestGraph:
         graph = build_graph()
         result = await graph.ainvoke({"request": req})
 
-        assert "overall_score" in result
-        assert result["overall_score"] >= 0
-        assert len(result["provider_results"]) == 5
-        assert "summary" in result
+        # Graph ends at geo_expand — prompts should be populated from classify
+        assert "prompts" in result
+        assert len(result["prompts"]) >= 1
+        # provider_results and overall_score are handled by ScanService, not the graph
+        assert "overall_score" not in result or result.get("overall_score") is None
 
     @pytest.mark.asyncio
     async def test_stream_emits_progress_events(self, mocker):
+        """Graph streams validate → classify → geo_expand only.
+        Provider queries and scoring are handled in ScanService."""
         classify_resp = mocker.MagicMock()
         classify_resp.choices = [mocker.MagicMock()]
         classify_resp.choices[0].message.content = json.dumps({
@@ -383,24 +376,9 @@ class TestGraph:
             "prompts": ["Best dentist in Houston"],
         })
 
-        provider_resp = mocker.MagicMock()
-        provider_resp.choices = [mocker.MagicMock()]
-        provider_resp.choices[0].message.content = (
-            "Test Dental in Houston is excellent."
-        )
-
-        call_count = 0
-
-        async def mock_llm(model, messages, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                return classify_resp
-            return provider_resp
-
         mocker.patch(
             "app.services.provider_service.litellm.acompletion",
-            side_effect=mock_llm,
+            return_value=classify_resp,
         )
 
         req = ScanRequest(
@@ -422,11 +400,13 @@ class TestGraph:
         all_nodes = set()
         for e in events:
             all_nodes.update(e.keys())
+
+        # Graph ends at geo_expand — only these three nodes should fire
         assert "validate" in all_nodes
         assert "classify" in all_nodes
         assert "geo_expand" in all_nodes
-        assert "query_providers" in all_nodes
-        assert "score" in all_nodes
+        assert "query_providers" not in all_nodes
+        assert "score" not in all_nodes
 
 
 class TestScoreResults:

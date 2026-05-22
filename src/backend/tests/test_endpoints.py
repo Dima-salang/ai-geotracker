@@ -46,9 +46,9 @@ def fixture_db_session():
 @pytest.mark.asyncio
 async def test_scan_event_stream_domain_only_enrichment(db_session, mocker):
     # Mock graph to return classification and prompts with updated request
-    mock_resp = mocker.MagicMock()
-    mock_resp.choices = [mocker.MagicMock()]
-    mock_resp.choices[0].message.content = json.dumps({
+    mock_classify_resp = mocker.MagicMock()
+    mock_classify_resp.choices = [mocker.MagicMock()]
+    mock_classify_resp.choices[0].message.content = json.dumps({
         "business_name": "Stripe",
         "industry": "payment processing",
         "primary_city": "San Francisco",
@@ -61,10 +61,30 @@ async def test_scan_event_stream_domain_only_enrichment(db_session, mocker):
         "prompts": ["Best payment processing api"],
     })
 
+    mock_provider_resp = mocker.MagicMock()
+    mock_provider_resp.choices = [mocker.MagicMock()]
+    mock_provider_resp.choices[0].message.content = (
+        "1. Stripe (stripe.com) - Leading payment processor\n"
+        "2. PayPal - Online payments\n"
+    )
+
+    # Route the mock response based on the active provider model being used:
+    # - gemini_grounding model (grounding/classification) -> mock_classify_resp
+    # - Other models (parallel auditing queries) -> mock_provider_resp
+    from app.services.provider_service import ProviderService
+    grounding_model = ProviderService.resolve_provider_call_args("gemini_grounding", db_session)["model"]
+
+    def mock_acompletion_side_effect(*args, **kwargs):
+        model = kwargs.get("model")
+        if model == grounding_model:
+            return mock_classify_resp
+        return mock_provider_resp
+
     mocker.patch(
         "app.services.provider_service.litellm.acompletion",
-        return_value=mock_resp,
+        side_effect=mock_acompletion_side_effect,
     )
+
 
     req = ScanRequest(
         business_name="",
@@ -336,4 +356,54 @@ def test_crud_scan_results(client, db_session):
     res = client.delete(f"/api/v1/scan_results/{res_id}")
     assert res.status_code == 200
     assert res.json()["status"] == "deleted"
+
+
+def test_crud_providers(client, db_session):
+    # 1. Fetch initial providers
+    res = client.get("/api/v1/providers")
+    assert res.status_code == 200
+    initial_configs = res.json()
+    
+    # 2. Register/Create a new custom provider
+    payload = {
+        "provider": "custom_openai",
+        "model": "openai/gpt-4o",
+        "api_base": "https://api.openai.com/v1",
+        "is_active": True,
+        "timeout_seconds": 25,
+        "api_key": "sk-test-key-123"
+    }
+    res = client.post("/api/v1/providers", json=payload)
+    assert res.status_code == 200
+    created = res.json()
+    assert created["provider"] == "custom_openai"
+    assert created["model"] == "openai/gpt-4o"
+    assert created["timeout_seconds"] == 25
+    assert created["has_key"] is True
+    provider_id = created["id"]
+
+    # Verify listing includes the new provider
+    res = client.get("/api/v1/providers")
+    assert res.status_code == 200
+    updated_configs = res.json()
+    assert len(updated_configs) == len(initial_configs) + 1
+    assert any(c["id"] == provider_id for c in updated_configs)
+
+    # 3. Delete the custom provider
+    res = client.delete(f"/api/v1/providers/{provider_id}")
+    assert res.status_code == 200
+    assert res.json() == {"status": "deleted"}
+
+    # Verify listing no longer includes the deleted provider
+    res = client.get("/api/v1/providers")
+    assert res.status_code == 200
+    post_delete_configs = res.json()
+    assert len(post_delete_configs) == len(initial_configs)
+    assert not any(c["id"] == provider_id for c in post_delete_configs)
+
+    # 4. Deleting a non-existent UUID should return 404
+    non_existent_id = "12345678-1234-5678-1234-567812345678"
+    res = client.delete(f"/api/v1/providers/{non_existent_id}")
+    assert res.status_code == 404
+    assert "not found" in res.json()["detail"].lower()
 
