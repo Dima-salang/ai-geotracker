@@ -77,8 +77,7 @@ class ScanService:
             yield f"event: progress\ndata: {json.dumps({'stage': 'initiated', 'scan_id': str(scan.id), 'business_id': str(biz.id)})}\n\n"
 
             initial = ScanState(request=req)
-
-            # ── PHASE 1: LangGraph (validate → classify → geo_expand) ──────────
+            # ── PHASE 1: LangGraph (validate → classify → geo_expand → web_search) ──────────
             async for step in cls.graph.astream(initial):
                 for node_name, output in step.items():
                     # Keep local state in sync with each node's output
@@ -88,6 +87,8 @@ class ScanService:
                         initial.prompts = output["prompts"]
                     if "classification" in output:
                         initial.classification = output["classification"]
+                    if "search_results" in output:
+                        initial.search_results = output["search_results"]
 
                     if node_name == "validate":
                         if output.get("errors"):
@@ -115,6 +116,9 @@ class ScanService:
 
                     elif node_name == "geo_expand":
                         yield f"event: progress\ndata: {json.dumps({'stage': 'geocoding', 'status': 'complete'})}\n\n"
+
+                    elif node_name == "web_search":
+                        yield f"event: progress\ndata: {json.dumps({'stage': 'web_search', 'status': 'complete'})}\n\n"
 
             # ── PHASE 2: Provider queries – stream each result as it arrives ───
             prompts = initial.prompts
@@ -149,7 +153,7 @@ class ScanService:
             # asyncio.as_completed then fires for whichever task finishes first.
             provider_tasks = [
                 asyncio.create_task(
-                    query_single_provider(cfg, prompts, business_name, domain, call_args=call_args)
+                    query_single_provider(cfg, prompts, business_name, domain, call_args=call_args, search_results=initial.search_results)
                 )
                 for cfg, call_args in resolved
             ]
@@ -166,6 +170,7 @@ class ScanService:
             final_scan_state = ScanState(
                 request=initial.request,
                 prompts=prompts,
+                search_results=initial.search_results,
                 provider_results=collected_results,
             )
             score_output = score_results(final_scan_state)
@@ -180,6 +185,7 @@ class ScanService:
                 db.add(ScanResult(
                     scan_id=scan.id,
                     provider=pr.provider,
+                    model=pr.model,
                     status=pr.status,
                     score=pr.score,
                     rank_position=pr.rank_position,
