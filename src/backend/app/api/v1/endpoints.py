@@ -15,11 +15,13 @@ from app.models.schema import (
     OrganizationCreate, OrganizationRead, OrganizationUpdate,
     BusinessRead, BusinessUpdate,
     ScanCreate, ScanRead, ScanUpdate,
-    ScanResult, ScanResultCreate, ScanResultRead, ScanResultUpdate
+    ScanResult, ScanResultCreate, ScanResultRead, ScanResultUpdate,
+    SystemConfig, SystemConfigRead, SystemConfigUpdateSchema
 )
 from app.services.user_service import UserService
 from app.services.provider_service import ProviderService
 from app.services.scan_service import ScanService
+from app.services.search_service import SearchRequest, SearchResponse, SearchService
 
 router = APIRouter()
 
@@ -89,6 +91,72 @@ def update_provider_settings(data: ProviderConfigCreate, db: Session = Depends(g
         "timeout_seconds": config.timeout_seconds,
         "has_key": bool(config.encrypted_api_key and len(config.api_key) > 0)
     }
+
+
+@router.get("/configs", response_model=List[SystemConfigRead])
+def get_configs(db: Session = Depends(get_db)):
+    """Retrieve all active system-wide configuration keys, masking secrets."""
+    # Ensure serper_api_key is seeded
+    existing = db.query(SystemConfig).filter(SystemConfig.key == "serper_api_key").first()
+    if not existing:
+        config = SystemConfig(key="serper_api_key", is_encrypted=True)
+        config.set_value("", encrypt=True)
+        db.add(config)
+        db.commit()
+
+    configs = db.query(SystemConfig).all()
+    return [
+        SystemConfigRead(
+            id=c.id,
+            key=c.key,
+            is_encrypted=c.is_encrypted,
+            has_value=bool(c.value and len(c.decrypted_value) > 0),
+            created_at=c.created_at,
+            updated_at=c.updated_at
+        )
+        for c in configs
+    ]
+
+
+@router.post("/configs", response_model=SystemConfigRead)
+def update_config(data: SystemConfigUpdateSchema, db: Session = Depends(get_db)):
+    """Securely upsert a system-wide configuration key, encrypting if needed."""
+    config = db.query(SystemConfig).filter(SystemConfig.key == data.key).first()
+    if not config:
+        encrypt = "key" in data.key.lower() or "secret" in data.key.lower() or "token" in data.key.lower()
+        config = SystemConfig(key=data.key, is_encrypted=encrypt)
+        config.set_value(data.value, encrypt=encrypt)
+        db.add(config)
+    else:
+        if data.value != "__NO_CHANGE__":
+            config.set_value(data.value, encrypt=config.is_encrypted)
+            
+    db.commit()
+    db.refresh(config)
+    return SystemConfigRead(
+        id=config.id,
+        key=config.key,
+        is_encrypted=config.is_encrypted,
+        has_value=bool(config.value and len(config.decrypted_value) > 0),
+        created_at=config.created_at,
+        updated_at=config.updated_at
+    )
+
+
+@router.post("/search", response_model=SearchResponse)
+async def run_search(req: SearchRequest, db: Session = Depends(get_db)):
+    """Execute live web search query using Serper Dev or DuckDuckGo."""
+    try:
+        results = await SearchService.search(req.prompt, req.provider, db=db)
+        return SearchResponse(
+            query=req.prompt,
+            provider=req.provider,
+            results=results
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Search service error: {str(e)}")
 
 
 @router.delete("/providers/{id}")
