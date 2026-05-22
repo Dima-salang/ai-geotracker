@@ -7,30 +7,35 @@ from app.models.schema import ProviderConfig, ProviderConfigCreate
 
 # System defaults for resilient fallbacks
 DEFAULT_PROVIDERS = {
+    "gemini_grounding": {
+        "model": "gemini/gemini-2.5-flash",
+        "api_base": None,
+        "timeout": 15
+    },
     "gemini": {
         "model": "gemini/gemini-2.0-flash",
         "api_base": None,
-        "timeout": 15
+        "timeout": 3
     },
     "perplexity": {
         "model": "perplexity/sonar-pro",
         "api_base": None,
-        "timeout": 15
+        "timeout": 3
     },
     "groq": {
         "model": "groq/llama-3.3-70b-versatile",
         "api_base": None,
-        "timeout": 15
+        "timeout": 3
     },
     "deepseek": {
         "model": "deepseek/deepseek-chat",
         "api_base": None,
-        "timeout": 15
+        "timeout": 3
     },
     "mistral": {
         "model": "mistral/mistral-small",
         "api_base": None,
-        "timeout": 15
+        "timeout": 3
     }
 }
 
@@ -57,7 +62,8 @@ class ProviderService:
             existing.api_base = data.api_base
             existing.is_active = data.is_active
             existing.timeout_seconds = data.timeout_seconds
-            existing.api_key = data.api_key  # Triggers automatic encryption
+            if data.api_key and data.api_key != "__NO_CHANGE__":
+                existing.api_key = data.api_key  # Triggers automatic encryption
             db.commit()
             db.refresh(existing)
             return existing
@@ -76,16 +82,13 @@ class ProviderService:
         return config
 
     @staticmethod
-    async def acompletion(
-        provider: str,
-        messages: List[dict],
-        db: Optional[Session] = None,
-        **kwargs
-    ) -> Any:
+    def resolve_provider_call_args(provider: str, db: Optional[Session] = None) -> dict:
         """
-        Execute an asynchronous LLM completion for a provider.
-        Dynamically loads active model, base URL, and decrypted API key from DB,
-        falling back to default env/model variables if DB config is absent.
+        Resolve the litellm call arguments for a provider in a single synchronous
+        DB lookup. Returns a dict ready to be merged into litellm.acompletion(**kwargs).
+
+        Call this ONCE before spawning parallel tasks so every coroutine can call
+        litellm.acompletion directly without hitting the DB.
         """
         from app.models.database import SessionLocal
 
@@ -107,32 +110,58 @@ class ProviderService:
                 ).first()
             except Exception:
                 pass
+            finally:
+                if own_session and active_session:
+                    active_session.close()
 
-        try:
-            if db_config:
-                model = db_config.model
-                api_key = db_config.api_key
-                api_base = db_config.api_base
-                timeout = db_config.timeout_seconds
-            else:
-                default = DEFAULT_PROVIDERS.get(provider, {})
-                model = default.get("model", f"{provider}/{provider}-default")
-                api_key = None  # Fallback to standard environment key loaded by litellm
-                api_base = default.get("api_base")
-                timeout = default.get("timeout", 15)
+        if db_config:
+            model_name = db_config.model
+            if (provider == "openrouter" or provider.startswith("openrouter")) and not model_name.startswith("openrouter/"):
+                model_name = f"openrouter/{model_name}"
 
-            call_args = {
-                "model": model,
-                "messages": messages,
-                "timeout": timeout,
-                **kwargs
+            call_args: dict = {
+                "model": model_name,
+                "timeout": db_config.timeout_seconds or 10,
             }
-            if api_key:
-                call_args["api_key"] = api_key
+            if db_config.api_key:
+                call_args["api_key"] = db_config.api_key
+            
+            api_base = db_config.api_base
+            if (provider == "openrouter" or provider.startswith("openrouter")) and not api_base:
+                api_base = "https://openrouter.ai/api/v1"
+            
+            if api_base:
+                call_args["api_base"] = api_base
+        else:
+            default = DEFAULT_PROVIDERS.get(provider, {})
+            call_args = {
+                "model": default.get("model", f"{provider}/{provider}-default"),
+                "timeout": default.get("timeout", 10),
+            }
+            api_base = default.get("api_base")
             if api_base:
                 call_args["api_base"] = api_base
 
-            return await litellm.acompletion(**call_args)
-        finally:
-            if own_session and active_session:
-                active_session.close()
+        return call_args
+
+    @staticmethod
+    async def acompletion(
+        provider: str,
+        messages: List[dict],
+        db: Optional[Session] = None,
+        call_args: Optional[dict] = None,
+        **kwargs
+    ) -> Any:
+        """
+        Execute an asynchronous LLM completion for a provider.
+        Dynamically loads active model, base URL, and decrypted API key from DB,
+        falling back to default env/model variables if DB config is absent.
+        Optionally accepts pre-resolved call_args to avoid DB queries.
+        """
+        if call_args is None:
+            call_args = ProviderService.resolve_provider_call_args(provider, db)
+        return await litellm.acompletion(
+            messages=messages,
+            **call_args,
+            **kwargs
+        )
