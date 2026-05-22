@@ -57,7 +57,7 @@ export default function ResultCRUD() {
   const [formError, setFormError] = useState("");
 
   const [consoleLogs, setConsoleLogs] = useState<string[]>([]);
-  const consoleEndRef = useRef<HTMLDivElement>(null);
+  const consoleContainerRef = useRef<HTMLDivElement>(null);
 
   const addLog = (message: string) => {
     const timestamp = new Date().toLocaleTimeString();
@@ -65,8 +65,8 @@ export default function ResultCRUD() {
   };
 
   useEffect(() => {
-    if (consoleEndRef.current) {
-      consoleEndRef.current.scrollIntoView({ behavior: "smooth" });
+    if (consoleContainerRef.current) {
+      consoleContainerRef.current.scrollTop = consoleContainerRef.current.scrollHeight;
     }
   }, [consoleLogs]);
 
@@ -577,13 +577,15 @@ export default function ResultCRUD() {
             </div>
 
             {/* Retro Blueprint Log Console */}
-            <div className="font-mono text-[10px] p-4 bg-background text-foreground border border-foreground/10 h-32 overflow-y-auto whitespace-pre-wrap leading-relaxed select-none">
+            <div 
+              ref={consoleContainerRef}
+              className="font-mono text-[10px] p-4 bg-background text-foreground border border-foreground/10 h-32 overflow-y-auto whitespace-pre-wrap leading-relaxed select-none"
+            >
               {consoleLogs.map((log, index) => (
                 <div key={index} className="mb-1 border-b border-foreground/5 pb-0.5">
                   {log}
                 </div>
               ))}
-              <div ref={consoleEndRef}></div>
             </div>
           </div>
         </section>

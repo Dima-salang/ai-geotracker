@@ -8,11 +8,11 @@ import ResultsDashboard, { ProviderResult, ScanRecommendation, ResearchedDetails
 
 /* ── Nav Links ── */
 const NAV_LINKS = [
-  { label: "MAPS", href: "#", active: true },
-  { label: "LOGS", href: "#" },
-  { label: "AUDITS", href: "#" },
-  { label: "SATELLITE", href: "#" },
-  { label: "SETTINGS", href: "/admin" },
+  { label: "AUDIT", href: "/", active: true },
+  { label: "SERVICES", href: "#" },
+  { label: "PRICING", href: "#" },
+  { label: "FAQS", href: "#" },
+  { label: "ADMIN", href: "/admin" },
 ] as const;
 
 /* ── Stats ── */
@@ -63,6 +63,18 @@ const BENTO_CARDS = {
   },
 };
 
+/* ── Floating positions for real-time fact popups orbiting the central blob ── */
+const FLOATING_POSITIONS = [
+  { top: "-25%", left: "-45%", right: undefined, bottom: undefined },
+  { top: "10%", right: "-55%", left: undefined, bottom: undefined },
+  { bottom: "-25%", left: "-30%", right: undefined, top: undefined },
+  { top: "-35%", right: "-25%", left: undefined, bottom: undefined },
+  { bottom: "30%", left: "-55%", right: undefined, top: undefined },
+  { bottom: "-25%", right: "-35%", left: undefined, top: undefined },
+  { top: "50%", left: "-60%", right: undefined, bottom: undefined },
+  { bottom: "45%", right: "-55%", left: undefined, top: undefined },
+] as const;
+
 export default function LandingPage() {
   const [domain, setDomain] = useState("");
   const [inputFocused, setInputFocused] = useState(false);
@@ -71,6 +83,13 @@ export default function LandingPage() {
   const [isVirtualDetected, setIsVirtualDetected] = useState<boolean | null>(null);
   const [terminalLogs, setTerminalLogs] = useState<string[]>([]);
   const [errorMsg, setErrorMsg] = useState("");
+  const [streamingProviders, setStreamingProviders] = useState<ProviderResult[]>([]);
+  const [providerCount, setProviderCount] = useState(0);
+
+  // Grounding metrics states
+  const [researchedCategory, setResearchedCategory] = useState("");
+  const [footprintRadius, setFootprintRadius] = useState<number | null>(null);
+  const [promptsGenerated, setPromptsGenerated] = useState<number | null>(null);
 
   const [scanResult, setScanResult] = useState<{
     overallScore: number;
@@ -81,13 +100,56 @@ export default function LandingPage() {
     scanId?: string;
   } | null>(null);
 
-  const terminalEndRef = useRef<HTMLDivElement>(null);
+  const [showDashboard, setShowDashboard] = useState(false);
+  const [researchedFacts, setResearchedFacts] = useState<Array<{ id: string; label: string; value: string }>>([]);
+  const [liveDetails, setLiveDetails] = useState<ResearchedDetails | null>(null);
+
+  // Live computed results for real-time streaming inside ResultsDashboard
+  const activeResults = loading ? streamingProviders : (scanResult?.providerResults || []);
+  const completedProviders = streamingProviders.filter(p => p.status !== "loading");
+  
+  const liveOverallScore = loading
+    ? (completedProviders.length > 0
+        ? Math.round(completedProviders.reduce((acc, curr) => acc + (curr.score || 0), 0) / completedProviders.length)
+        : 0)
+    : (scanResult?.overallScore || 0);
+
+  const liveSummary = loading
+    ? {
+        green: completedProviders.filter(p => p.status === "green").length,
+        yellow: completedProviders.filter(p => p.status === "yellow").length,
+        red: completedProviders.filter(p => p.status === "red").length,
+      }
+    : (scanResult?.summary || { green: 0, yellow: 0, red: 0 });
+
+  const liveRecommendations = loading ? [] : (scanResult?.recommendations || []);
+  
+  const liveResearchedDetails = liveDetails || {
+    business_name: (domain || "").split(".")[0]?.toUpperCase() || "Unresolved",
+    domain: domain,
+    industry: researchedCategory || "Classifying...",
+    primary_city: "Global Focus",
+    primary_state: "",
+    country: "US",
+    service_focuses: isVirtualDetected ? ["Virtual Operations"] : [],
+    is_virtual: isVirtualDetected ?? false,
+  };
+
+  const consoleContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (terminalEndRef.current) {
-      terminalEndRef.current.scrollIntoView({ behavior: "smooth" });
+    if (consoleContainerRef.current) {
+      consoleContainerRef.current.scrollTop = consoleContainerRef.current.scrollHeight;
     }
   }, [terminalLogs]);
+
+  useEffect(() => {
+    if (showDashboard) {
+      setTimeout(() => {
+        document.getElementById("results-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 150);
+    }
+  }, [showDashboard]);
 
   const addLog = (message: string) => {
     const timestamp = new Date().toLocaleTimeString();
@@ -111,6 +173,19 @@ export default function LandingPage() {
     setIsVirtualDetected(null);
     setProgressStage("initiated");
     setTerminalLogs([]);
+    setStreamingProviders([]);
+    setProviderCount(0);
+    setResearchedCategory("");
+    setFootprintRadius(null);
+    setPromptsGenerated(null);
+    setShowDashboard(false);
+    setResearchedFacts([]);
+    setLiveDetails(null);
+
+    // Smoothly scroll down to the scan progress section
+    setTimeout(() => {
+      document.getElementById("scan-progress-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 150);
 
     addLog(`SYS_LOAD: Initializing secure node scan for ${cleanDomain}...`);
     addLog("SYS_VAL: Connecting to search routing system...");
@@ -179,28 +254,156 @@ export default function LandingPage() {
                   activeScanId = data.scan_id;
                   addLog(`SYS_INFO: Registration complete. SCAN_ID = ${activeScanId}`);
                   addLog("SYS_LOAD: Beginning LangGraph workflow execution...");
+                  setResearchedFacts((prev) => [
+                    ...prev,
+                    { id: "init", label: "Registry Protocol", value: "Node Handshake Successful" },
+                  ]);
                 } else if (data.stage === "validated") {
                   setProgressStage("validated");
                   addLog("SYS_VAL: Input sanitization verified. Domain constraints resolved.");
+                  setResearchedFacts((prev) => {
+                    if (prev.some((f) => f.id === "val")) return prev;
+                    return [
+                      ...prev,
+                      { id: "val", label: "Domain Verification", value: "Sanitized & Constraints Met" },
+                    ];
+                  });
                 } else if (data.stage === "classification") {
                   setProgressStage("classification");
                   setIsVirtualDetected(data.is_virtual);
+                  setResearchedCategory(data.industry || "");
+                  setFootprintRadius(data.radius_miles ?? null);
+                  setPromptsGenerated(data.prompts_generated ?? null);
                   addLog("LLM_NODE: Online business classification finished.");
                   addLog(`LLM_NODE: Researched category: "${data.industry.toUpperCase()}"`);
                   addLog(`LLM_NODE: Virtual storefront operation detected: ${data.is_virtual ? "TRUE" : "FALSE"}`);
                   addLog(`LLM_NODE: Search footprint index: radius of ${data.radius_miles} miles`);
                   addLog(`LLM_NODE: Injected query space: ${data.prompts_generated} specialized prompts.`);
+                  
+                  setResearchedFacts((prev) => {
+                    const newFacts = [...prev];
+                    if (!newFacts.some((f) => f.id === "ind")) {
+                      newFacts.push({ id: "ind", label: "Researched Category", value: (data.industry || "Unresolved").toUpperCase() });
+                    }
+                    if (!newFacts.some((f) => f.id === "foot")) {
+                      newFacts.push({ 
+                        id: "foot", 
+                        label: "Footprint Vector", 
+                        value: data.is_virtual ? "Global Location-Free Space" : "Local Proximity Index" 
+                      });
+                    }
+                    if (!newFacts.some((f) => f.id === "rad") && data.radius_miles != null) {
+                      newFacts.push({ 
+                        id: "rad", 
+                        label: "Radial Footprint", 
+                        value: `${data.radius_miles} Mile Proximity` 
+                      });
+                    }
+                    if (!newFacts.some((f) => f.id === "prom")) {
+                      newFacts.push({ 
+                        id: "prom", 
+                        label: "Scenarios Compiled", 
+                        value: `${data.prompts_generated || 8} Context Scenarios` 
+                      });
+                    }
+                    return newFacts;
+                  });
+
+                  // Trigger early detail fetch for business name and service focuses in background
+                  (async () => {
+                    try {
+                      const detailsRes = await fetch(`${BACKEND_URL}/api/v1/scans/${data.scan_id || activeScanId}`);
+                      if (detailsRes.ok) {
+                        const fullScan = await detailsRes.json();
+                        setLiveDetails({
+                          business_name: fullScan.business_name,
+                          domain: fullScan.business_domain,
+                          industry: fullScan.business_industry,
+                          primary_city: fullScan.business_city,
+                          primary_state: fullScan.business_state,
+                          country: "US",
+                          service_focuses: fullScan.business_service_focuses || [],
+                          is_virtual: fullScan.is_virtual ?? data.is_virtual ?? false,
+                        });
+
+                        setResearchedFacts((prev) => {
+                          const newFacts = [...prev];
+                          if (fullScan.business_name && !newFacts.some((f) => f.id === "name")) {
+                            newFacts.unshift({ 
+                              id: "name", 
+                              label: "Resolved Entity", 
+                              value: fullScan.business_name.toUpperCase() 
+                            });
+                          }
+                          if (fullScan.business_service_focuses && fullScan.business_service_focuses.length > 0 && !newFacts.some((f) => f.id === "svc")) {
+                            newFacts.push({ 
+                              id: "svc", 
+                              label: "Identified Offering", 
+                              value: fullScan.business_service_focuses[0].toUpperCase() 
+                            });
+                          }
+                          return newFacts;
+                        });
+                      }
+                    } catch (e) {
+                      console.error("Early details fetch error", e);
+                    }
+                  })();
                 } else if (data.stage === "geocoding") {
                   setProgressStage("geocoding");
                   addLog("GEO_CO: Bypassing regional coordinates (using location-free vectors)...");
+                  setResearchedFacts((prev) => {
+                    if (prev.some((f) => f.id === "geo")) return prev;
+                    return [
+                      ...prev,
+                      { id: "geo", label: "Geographic Expansion", value: "Indexed Location Proximity Vector" },
+                    ];
+                  });
+                } else if (data.stage === "querying_providers") {
+                  setProgressStage("querying_providers");
+                  setProviderCount(data.provider_count ?? 0);
+                  
+                  addLog(`ENGINE: Dispatching ${data.prompt_count} prompts × ${data.provider_count} AI engines in parallel...`);
+                  addLog("ENGINE: Results will stream in as each engine responds.");
+                  
+                  // Seed the engines with "loading" status instantly for instant visual loaders
+                  if (data.providers && Array.isArray(data.providers)) {
+                    const initial = data.providers.map((name: string) => ({
+                      provider: name,
+                      status: "loading",
+                      score: 0,
+                      mentioned: false,
+                      actionable: false,
+                      domain_match: false,
+                      rank_position: null,
+                      error: null,
+                    }));
+                    setStreamingProviders(initial);
+                  }
+
+                  // 6-second premium transition delay so the user can enjoy the orbiting text pills!
+                  setTimeout(() => {
+                    setShowDashboard(true);
+                  }, 6000);
                 }
               } else if (eventType === "provider_result") {
-                setProgressStage("query_providers");
+                setProgressStage("querying_providers");
+                // Dashboard visibility is handled smoothly by the scheduled 3-second timer above
                 const providerColor = data.status === "green" ? "🟢" : data.status === "yellow" ? "🟡" : "🔴";
-                addLog(`ENGINE: ${data.provider.toUpperCase()} index: ${providerColor} score = ${data.score}/100, rank = ${data.rank_position || "N/A"}`);
+                addLog(`ENGINE: ${data.provider.toUpperCase()} → ${providerColor} score=${data.score}/100, rank=${data.rank_position ?? "N/A"}`);
                 if (data.error) {
-                  addLog(`[WARN] Engine node error: ${data.error}`);
+                  addLog(`[WARN] ${data.provider.toUpperCase()} node error: ${data.error}`);
                 }
+                
+                // Live incremental provider results update
+                setStreamingProviders((prev) => {
+                  const exists = prev.some((p) => p.provider === data.provider);
+                  if (exists) {
+                    return prev.map((p) => (p.provider === data.provider ? (data as ProviderResult) : p));
+                  } else {
+                    return [...prev, data as ProviderResult];
+                  }
+                });
               } else if (eventType === "complete") {
                 setProgressStage("complete");
                 addLog("SYS_SUCCESS: Coverage matrices resolved! Compiling visibility score card...");
@@ -318,81 +521,55 @@ export default function LandingPage() {
                 Customers are no longer just searching Google—they’re asking ChatGPT, Gemini, and Claude who to trust, hire, and buy from. GeoTracker shows whether AI is recommending your business or sending customers to your competitors.
               </p>
 
-              {!scanResult && !loading && (
-                <div className="flex flex-col gap-4 w-full">
-                  <div className={`relative border p-[1px] bg-background transition-colors ${inputFocused ? "border-primary" : "border-foreground"
-                    }`}>
-                    <input
-                      id="hero-business-url"
-                      type="text"
-                      value={domain}
-                      onChange={(e) => setDomain(e.target.value)}
-                      placeholder="ENTER YOUR DOMAIN (E.G. HTTPS://YOURCOMPANY.COM)"
-                      className="w-full bg-transparent border-none focus:outline-none font-mono text-xs py-4 px-5 uppercase placeholder:text-foreground/30 text-foreground"
-                      onFocus={() => setInputFocused(true)}
-                      onBlur={() => setInputFocused(false)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") handleStartScan();
-                      }}
-                    />
-                  </div>
-                  <button
-                    id="cta-check-visibility"
-                    onClick={handleStartScan}
-                    className="w-full bg-primary text-white font-mono text-xs py-4 border border-primary hover:bg-transparent hover:text-primary transition-all uppercase font-bold tracking-widest cursor-pointer"
-                  >
-                    Check My Visibility Score
-                  </button>
-                  {errorMsg && (
-                    <span className="font-mono text-[10px] text-rose-600 uppercase font-bold">
-                      [ERR] {errorMsg}
-                    </span>
-                  )}
+              <div className="flex flex-col gap-4 w-full">
+                <div className={`relative border p-[1px] bg-background transition-all duration-300 ${
+                  inputFocused ? "border-primary" : "border-foreground"
+                } ${loading ? "opacity-60 cursor-not-allowed" : ""}`}>
+                  <input
+                    id="hero-business-url"
+                    type="text"
+                    value={domain}
+                    onChange={(e) => setDomain(e.target.value)}
+                    placeholder="ENTER YOUR DOMAIN (E.G. HTTPS://YOURCOMPANY.COM)"
+                    className="w-full bg-transparent border-none focus:outline-none font-mono text-xs py-4 px-5 uppercase placeholder:text-foreground/30 text-foreground disabled:cursor-not-allowed"
+                    onFocus={() => setInputFocused(true)}
+                    onBlur={() => setInputFocused(false)}
+                    disabled={loading}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !loading) handleStartScan();
+                    }}
+                  />
                 </div>
-              )}
+                <button
+                  id="cta-check-visibility"
+                  onClick={handleStartScan}
+                  disabled={loading}
+                  className={`w-full font-mono text-xs py-4 border transition-all uppercase font-bold tracking-widest cursor-pointer ${
+                    loading 
+                      ? "bg-foreground/5 text-text-muted border-foreground/10 cursor-not-allowed" 
+                      : "bg-primary text-white border-primary hover:bg-transparent hover:text-primary"
+                  }`}
+                >
+                  {loading ? "SCANNING_IN_PROGRESS..." : "Check My Visibility Score"}
+                </button>
+                {errorMsg && (
+                  <span className="font-mono text-[10px] text-rose-600 uppercase font-bold">
+                    [ERR] {errorMsg}
+                  </span>
+                )}
+              </div>
 
-              {/* ── SSE REAL-TIME TERMINAL PROGRESS LOADER ── */}
-              {loading && (
-                <div className="w-full border border-foreground/10 bg-background p-5 mt-4 transition-all duration-300">
-                  <div className="flex justify-between items-center mb-3">
-                    <span className="font-mono text-[10px] text-primary font-bold uppercase tracking-wider animate-pulse">
-                      ● AUDITING ENGINE STAGES
-                    </span>
-                    <span className="font-mono text-[9px] text-text-muted">
-                      {progressStage.toUpperCase()}
-                    </span>
-                  </div>
-
-                  {/* Elegant bento-style step loader */}
-                  <div className="grid grid-cols-5 gap-1.5 mb-4">
-                    <div className={`h-1.5 transition-colors duration-300 ${["initiated", "validated", "classification", "geocoding", "query_providers", "complete"].includes(progressStage) ? "bg-primary" : "bg-foreground/10"}`}></div>
-                    <div className={`h-1.5 transition-colors duration-300 ${["validated", "classification", "geocoding", "query_providers", "complete"].includes(progressStage) ? "bg-primary" : "bg-foreground/10"}`}></div>
-                    <div className={`h-1.5 transition-colors duration-300 ${["classification", "geocoding", "query_providers", "complete"].includes(progressStage) ? "bg-primary" : "bg-foreground/10"}`}></div>
-                    <div className={`h-1.5 transition-colors duration-300 ${["geocoding", "query_providers", "complete"].includes(progressStage) ? "bg-primary" : "bg-foreground/10"}`}></div>
-                    <div className={`h-1.5 transition-colors duration-300 ${["query_providers", "complete"].includes(progressStage) ? "bg-primary" : "bg-foreground/10"}`}></div>
-                  </div>
-
-                  {/* Retro Blueprint Terminal Log Console */}
-                  <div className="font-mono text-[9px] p-3.5 bg-foreground text-background h-36 overflow-y-auto whitespace-pre-wrap leading-relaxed select-none">
-                    {terminalLogs.map((log, index) => (
-                      <div key={index} className="mb-1 border-b border-background/5 pb-0.5">
-                        {log}
-                      </div>
-                    ))}
-                    <div ref={terminalEndRef}></div>
-                  </div>
-                </div>
-              )}
-
-              {/* Reset button when viewing dashboard */}
               {scanResult && !loading && (
                 <div className="mt-4">
                   <button
                     onClick={() => {
                       setScanResult(null);
                       setDomain("");
+                      setProgressStage("");
+                      setShowDashboard(false);
+                      document.getElementById("top-nav")?.scrollIntoView({ behavior: "smooth" });
                     }}
-                    className="font-mono text-[10px] bg-foreground text-background px-5 py-2.5 hover:bg-primary hover:text-white transition-all uppercase font-bold"
+                    className="font-mono text-[10px] bg-foreground text-background px-5 py-2.5 border border-foreground hover:bg-transparent hover:text-foreground transition-all uppercase font-bold cursor-pointer"
                   >
                     ← AUDIT NEW DOMAIN
                   </button>
@@ -415,29 +592,105 @@ export default function LandingPage() {
           </div>
         </section>
 
+        {/* ── SSE REAL-TIME SCANS & DISPATCH PROGRESS SECTION ── */}
+        {progressStage !== "" && (
+          <section
+            id="scan-progress-section"
+            className={`px-6 md:px-10 border-b border-border bg-[#FAF9F6] relative overflow-hidden transition-all duration-[800ms] ease-in-out flex flex-col items-center justify-center ${
+              showDashboard 
+                ? "opacity-0 -translate-y-12 scale-95 max-h-0 py-0 overflow-hidden pointer-events-none border-b-0"
+                : "opacity-100 translate-y-0 scale-100 max-h-[1200px] py-32 pointer-events-auto"
+            }`}
+          >
+            {/* The Morphing & Spinning Ethereal Blob */}
+            <div className="relative w-[240px] h-[240px] md:w-[320px] md:h-[320px] flex items-center justify-center mb-16 mt-8">
+              <div className="absolute inset-0 ethereal-blob transition-all duration-700"></div>
+              
+              {/* Overlay Grid Line Effect for premium look */}
+              <div className="absolute inset-0 pointer-events-none" style={{
+                backgroundImage: 'radial-gradient(var(--foreground) 1px, transparent 0)',
+                backgroundSize: '16px 16px',
+                opacity: 0.03
+              }}></div>
+
+              {/* FLOATING TEXT PILLS STREAMING LIVE */}
+              {researchedFacts.map((fact, idx) => {
+                const pos = FLOATING_POSITIONS[idx % FLOATING_POSITIONS.length];
+                return (
+                  <div
+                    key={fact.id}
+                    className={`floating-pill floating-fact-enter-${(idx % 8) + 1} select-none`}
+                    style={{
+                      top: pos.top,
+                      left: pos.left,
+                      right: pos.right,
+                      bottom: pos.bottom,
+                    }}
+                  >
+                    <span className="font-mono text-[9px] text-primary/80 uppercase tracking-widest block mb-1 font-bold">
+                      {fact.label}
+                    </span>
+                    <span className="font-sans text-xs font-black text-foreground uppercase tracking-tight whitespace-nowrap">
+                      {fact.value}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Elegant Minimal Typography */}
+            <div className="text-center max-w-2xl relative z-10">
+              <span className="font-mono text-xs text-primary font-bold uppercase tracking-[0.2em] mb-4 block animate-pulse">
+                Auditing AI Visibility
+              </span>
+              
+              <h2 className="font-display text-[2rem] md:text-[2.5rem] font-bold uppercase tracking-tight leading-tight mb-4">
+                Analyzing {domain}
+              </h2>
+              
+              <p className="font-mono text-[10px] text-text-muted uppercase tracking-widest leading-relaxed">
+                {progressStage === "initiated" && "Initializing secure node audit..."}
+                {progressStage === "validated" && "Validating input parameters..."}
+                {progressStage === "classification" && "Grounding service footprint & category constraints..."}
+                {progressStage === "geocoding" && "Mapping global proximity search indexes..."}
+                {progressStage === "querying_providers" && `Querying ${providerCount || 8} AI engines in parallel...`}
+                {progressStage === "complete" && "Generating search visibility report..."}
+              </p>
+            </div>
+          </section>
+        )}
+
         {/* ── DETAILED RESULTS DASHBOARD (TEMPORARY DISPLAY SECTION) ── */}
-        {scanResult && (
-          <section id="results-section" className="py-16 px-6 md:px-10 border-b border-border bg-surface-container-low animate-in fade-in zoom-in-95 duration-500">
+        {(showDashboard || scanResult) && (
+          <section 
+            id="results-section" 
+            className={`px-6 md:px-10 border-b border-border bg-surface-container-low transition-all duration-[1000ms] ease-in-out ${
+              showDashboard 
+                ? "opacity-100 translate-y-0 scale-100 max-h-[4000px] pointer-events-auto py-16" 
+                : "opacity-0 translate-y-12 scale-95 max-h-0 py-0 overflow-hidden pointer-events-none border-b-0"
+            }`}
+          >
             <div className="max-w-7xl mx-auto mb-8 flex flex-col sm:flex-row justify-between items-start sm:items-end border-b border-foreground/10 pb-4 gap-4">
               <div>
                 <span className="font-mono text-xs text-primary mb-2 uppercase tracking-[0.2em] block">
-                  REAL-TIME RESULTS DASHBOARD
+                  {loading ? "◆ AUDIT CURRENTLY RUNNING" : "REAL-TIME RESULTS DASHBOARD"}
                 </span>
                 <h2 className="font-display text-[2rem] font-bold tracking-tight uppercase leading-none">
                   Discovery Scorecard
                 </h2>
               </div>
-              <span className="font-mono text-[10px] text-text-muted mb-1">
-                SYSTEM_NODE: 0x9812A
+              <span className="font-mono text-[10px] text-text-muted mb-1 uppercase tracking-widest">
+                {loading ? "◆ STREAMING PARALLEL NODES..." : "SYSTEM_NODE: ONLINE"}
               </span>
             </div>
             <ResultsDashboard
-              overallScore={scanResult.overallScore}
-              summary={scanResult.summary}
-              recommendations={scanResult.recommendations}
-              details={scanResult.details}
-              providerResults={scanResult.providerResults}
-              scanId={scanResult.scanId}
+              overallScore={liveOverallScore}
+              summary={liveSummary}
+              recommendations={liveRecommendations}
+              details={liveResearchedDetails}
+              providerResults={activeResults}
+              scanId={scanResult?.scanId}
+              isScanning={loading}
             />
           </section>
         )}

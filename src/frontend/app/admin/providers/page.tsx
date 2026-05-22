@@ -26,9 +26,26 @@ export default function AdminProviders() {
   // Local form state for API keys to allow editing
   const [apiKeys, setApiKeys] = useState<{ [key: string]: string }>({});
   
+  // State for the Create Platform form
+  const [newProvider, setNewProvider] = useState("");
+  const [newModel, setNewModel] = useState("");
+  const [newApiBase, setNewApiBase] = useState("");
+  const [newTimeout, setNewTimeout] = useState(15);
+  const [newApiKey, setNewApiKey] = useState("");
+  const [newIsActive, setNewIsActive] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [showCreateForm, setShowCreateForm] = useState(false);
+
+  const scrollToCreateForm = () => {
+    setShowCreateForm(true);
+    setTimeout(() => {
+      document.getElementById("create-provider-form")?.scrollIntoView({ behavior: "smooth" });
+    }, 100);
+  };
+  
   // Console logging state
   const [consoleLogs, setConsoleLogs] = useState<string[]>([]);
-  const consoleEndRef = useRef<HTMLDivElement>(null);
+  const consoleContainerRef = useRef<HTMLDivElement>(null);
 
   const addLog = (message: string) => {
     const timestamp = new Date().toLocaleTimeString();
@@ -36,12 +53,90 @@ export default function AdminProviders() {
   };
 
   useEffect(() => {
-    if (consoleEndRef.current) {
-      consoleEndRef.current.scrollIntoView({ behavior: "smooth" });
+    if (consoleContainerRef.current) {
+      consoleContainerRef.current.scrollTop = consoleContainerRef.current.scrollHeight;
     }
   }, [consoleLogs]);
 
   const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+  const handleCreateConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newProvider.trim() || !newModel.trim()) {
+      setErrorMsg("Provider code and model name are required.");
+      addLog("[ERROR] CREATE_FAIL: Missing required form fields.");
+      return;
+    }
+
+    setCreating(true);
+    addLog(`CREATE: Registering custom AI Platform [${newProvider.toUpperCase()}]...`);
+
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/v1/providers`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          provider: newProvider.trim().toLowerCase(),
+          model: newModel.trim(),
+          api_base: newApiBase.trim() || null,
+          is_active: newIsActive,
+          timeout_seconds: Number(newTimeout),
+          api_key: newApiKey,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error ${response.status}`);
+      }
+
+      const created = await response.json();
+      addLog(`[SUCCESS] CREATE: Custom Platform [${created.provider.toUpperCase()}] registered successfully.`);
+      
+      // Reset form fields
+      setNewProvider("");
+      setNewModel("");
+      setNewApiBase("");
+      setNewTimeout(15);
+      setNewApiKey("");
+      setNewIsActive(true);
+      setShowCreateForm(false);
+
+      // Refresh configs list
+      await fetchConfigs(true);
+    } catch (err: any) {
+      console.error(err);
+      addLog(`[ERROR] CREATE_FAIL: Registration failed: ${err.message}`);
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleDeleteConfig = async (id: string, providerName: string) => {
+    const confirmDelete = window.confirm(`Are you absolutely sure you want to delete the [${providerName.toUpperCase()}] engine registry?`);
+    if (!confirmDelete) return;
+
+    addLog(`DELETE: Removing AI Platform [${providerName.toUpperCase()}] registry...`);
+
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/v1/providers/${id}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error ${response.status}`);
+      }
+
+      addLog(`[SUCCESS] DELETE: Platform [${providerName.toUpperCase()}] completely de-registered from core database.`);
+      
+      // Refresh configs list
+      await fetchConfigs(true);
+    } catch (err: any) {
+      console.error(err);
+      addLog(`[ERROR] DELETE_FAIL: De-registration failed for [${providerName.toUpperCase()}]: ${err.message}`);
+    }
+  };
 
   // Fetch configs on load
   const fetchConfigs = async (silent = false) => {
@@ -154,9 +249,14 @@ export default function AdminProviders() {
   // Helper translations for display titles & descriptions
   const getPlatformDetails = (provider: string) => {
     switch (provider) {
+      case "gemini_grounding":
+        return {
+          title: "Google Gemini (Search Grounding)",
+          desc: "Dedicated search engine configuration used specifically for initial web grounding and business classification.",
+        };
       case "gemini":
         return {
-          title: "Google Gemini",
+          title: "Google Gemini (Parallel Auditing)",
           desc: "Direct integration with Google's native multimodal LLM search indexing architecture.",
         };
       case "perplexity":
@@ -223,9 +323,17 @@ export default function AdminProviders() {
                 AI Search Platforms
               </h1>
             </div>
-            <p className="font-sans text-sm text-text-muted max-w-md leading-relaxed">
-              Configure the API endpoint URLs, active AI model versions, and secure API keys utilized by the AI search agents. All keys are encrypted.
-            </p>
+            <div className="flex flex-col md:flex-row items-start md:items-center gap-6 shrink-0">
+              <p className="font-sans text-sm text-text-muted max-w-sm leading-relaxed">
+                Configure the API endpoint URLs, active AI model versions, and secure API keys utilized by the AI search agents. All keys are encrypted.
+              </p>
+              <button
+                onClick={scrollToCreateForm}
+                className="font-mono text-xs tracking-tighter bg-foreground text-background border border-foreground px-6 py-3 hover:bg-primary hover:text-white transition-all uppercase font-bold shrink-0"
+              >
+                [+ ADD CUSTOM ENGINE]
+              </button>
+            </div>
           </div>
 
 
@@ -363,8 +471,17 @@ export default function AdminProviders() {
 
                     {/* Card Footer Actions */}
                     <div className="p-6 md:p-8 bg-surface-container-low border-t border-foreground/10 flex justify-between items-center">
-                      <div className="font-mono text-[9px] text-text-muted uppercase">
-                        Engine ID: {config.provider}
+                      <div className="flex items-center gap-3">
+                        <span className="font-mono text-[9px] text-text-muted uppercase">
+                          ID: {config.provider}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteConfig(config.id, config.provider)}
+                          className="font-mono text-[10px] text-rose-600 hover:text-rose-800 transition-colors uppercase font-bold"
+                        >
+                          [DELETE]
+                        </button>
                       </div>
                       
                       <button
@@ -385,6 +502,166 @@ export default function AdminProviders() {
                   </div>
                 );
               })}
+
+              {/* Add Custom Engine Collapsible Trigger / Form Card */}
+              <div id="create-provider-form">
+                {!showCreateForm ? (
+                  <div 
+                    onClick={() => setShowCreateForm(true)}
+                    className="border border-dashed border-foreground/30 bg-background/50 hover:bg-surface-container-low hover:border-foreground/60 transition-all duration-300 flex flex-col items-center justify-center p-12 text-center cursor-pointer min-h-[350px] group"
+                  >
+                    <div className="w-16 h-16 rounded-none border border-dashed border-foreground/30 flex items-center justify-center text-2xl font-bold text-text-muted group-hover:text-primary group-hover:border-primary transition-colors mb-4 bg-background">
+                      +
+                    </div>
+                    <h3 className="font-display text-xl font-bold uppercase tracking-tight text-foreground group-hover:text-primary transition-colors">
+                      Add custom engine
+                    </h3>
+                    <p className="font-sans text-xs text-text-muted max-w-xs mt-2 leading-relaxed">
+                      Register a custom LLM provider dynamically. Newly registered active engines will automatically execute in parallel during audits.
+                    </p>
+                    <button
+                      type="button"
+                      className="mt-6 font-mono text-[10px] bg-foreground text-background px-4 py-2 hover:bg-primary hover:text-white transition-all uppercase font-bold"
+                    >
+                      [+ REGISTER NEW AI ENGINE]
+                    </button>
+                  </div>
+                ) : (
+                  <div className="border border-dashed border-foreground/30 bg-background/50 flex flex-col justify-between transition-all duration-300 hover:border-foreground/50">
+                    {/* Header */}
+                    <div className="p-6 md:p-8 border-b border-foreground/10 bg-surface-container-low/50 flex justify-between items-start gap-4">
+                      <div>
+                        <div className="flex items-center gap-3 mb-2">
+                          <span className="font-mono text-[10px] bg-primary text-white px-2 py-0.5 uppercase font-bold tracking-tighter animate-pulse">
+                            NEW_ENGINE
+                          </span>
+                        </div>
+                        <h3 className="font-display text-[1.6rem] font-bold uppercase tracking-tight text-foreground">
+                          Add custom engine
+                        </h3>
+                        <p className="font-sans text-xs text-text-muted leading-relaxed mt-2">
+                          Register a custom LLM provider dynamically. Newly registered active engines will automatically execute in parallel during audits.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowCreateForm(false);
+                        }}
+                        className="font-mono text-[10px] text-foreground/50 hover:text-foreground font-bold border border-foreground/20 hover:border-foreground px-3 py-1.5 transition-colors uppercase"
+                      >
+                        [CANCEL]
+                      </button>
+                    </div>
+
+                    {/* Form Body */}
+                    <form onSubmit={handleCreateConfig} className="p-6 md:p-8 space-y-5 flex-grow">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Provider Code */}
+                        <div>
+                          <label className="font-mono text-[10px] text-text-muted uppercase block mb-1.5 font-bold tracking-wider">
+                            Platform Code *
+                          </label>
+                          <input
+                            type="text"
+                            value={newProvider}
+                            onChange={(e) => setNewProvider(e.target.value)}
+                            className="w-full bg-transparent border-b border-foreground/20 focus:border-primary focus:outline-none font-mono text-xs py-2 text-foreground"
+                            placeholder="e.g. openai"
+                            required
+                          />
+                        </div>
+
+                        {/* Model ID */}
+                        <div>
+                          <label className="font-mono text-[10px] text-text-muted uppercase block mb-1.5 font-bold tracking-wider">
+                            Model ID / Brain Version *
+                          </label>
+                          <input
+                            type="text"
+                            value={newModel}
+                            onChange={(e) => setNewModel(e.target.value)}
+                            className="w-full bg-transparent border-b border-foreground/20 focus:border-primary focus:outline-none font-mono text-xs py-2 text-foreground"
+                            placeholder="e.g. openai/gpt-4o"
+                            required
+                          />
+                        </div>
+                      </div>
+
+                      {/* Connection Endpoint */}
+                      <div>
+                        <label className="font-mono text-[10px] text-text-muted uppercase block mb-1.5 font-bold tracking-wider">
+                          Endpoint Base Address (Optional)
+                        </label>
+                        <input
+                          type="text"
+                          value={newApiBase}
+                          onChange={(e) => setNewApiBase(e.target.value)}
+                          className="w-full bg-transparent border-b border-foreground/20 focus:border-primary focus:outline-none font-mono text-xs py-2 text-foreground placeholder:text-foreground/20"
+                          placeholder="e.g. https://api.openai.com/v1"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Timeout */}
+                        <div>
+                          <label className="font-mono text-[10px] text-text-muted uppercase block mb-1.5 font-bold tracking-wider">
+                            Timeout (Seconds)
+                          </label>
+                          <input
+                            type="number"
+                            value={newTimeout}
+                            onChange={(e) => setNewTimeout(Number(e.target.value))}
+                            className="w-full bg-transparent border-b border-foreground/20 focus:border-primary focus:outline-none font-mono text-xs py-2 text-foreground"
+                            min={1}
+                            max={120}
+                          />
+                        </div>
+
+                        {/* API Key */}
+                        <div>
+                          <label className="font-mono text-[10px] text-text-muted uppercase block mb-1.5 font-bold tracking-wider">
+                            Access Key / API Credentials
+                          </label>
+                          <input
+                            type="password"
+                            value={newApiKey}
+                            onChange={(e) => setNewApiKey(e.target.value)}
+                            className="w-full bg-transparent border-b border-foreground/20 focus:border-primary focus:outline-none font-mono text-xs py-2 text-foreground"
+                            placeholder="sk-..."
+                          />
+                        </div>
+                      </div>
+
+                      {/* Form Footer Actions */}
+                      <div className="pt-6 border-t border-foreground/10 flex justify-between items-center bg-transparent">
+                        <div className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => setNewIsActive(!newIsActive)}
+                            className={`font-mono text-[10px] font-bold px-3 py-1.5 border transition-all uppercase ${
+                              newIsActive
+                                ? "bg-emerald-600 border-emerald-600 text-white"
+                                : "bg-transparent border-foreground/20 text-text-muted hover:border-foreground"
+                            }`}
+                          >
+                            {newIsActive ? "ACTIVE ON CREATE" : "INACTIVE ON CREATE"}
+                          </button>
+                        </div>
+                        
+                        <button
+                          type="submit"
+                          disabled={creating}
+                          className="font-mono text-xs tracking-tighter bg-foreground text-background px-6 py-2.5 hover:bg-primary hover:text-white disabled:bg-foreground/50 transition-all uppercase font-bold flex items-center gap-2"
+                        >
+                          {creating ? "REGISTERING..." : "REGISTER_AI_ENGINE"}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -404,13 +681,15 @@ export default function AdminProviders() {
             </div>
 
             {/* Retro Blueprint Terminal Log Console */}
-            <div className="font-mono text-[10px] p-4 bg-background text-foreground border border-foreground/10 h-32 overflow-y-auto whitespace-pre-wrap leading-relaxed select-none">
+            <div 
+              ref={consoleContainerRef}
+              className="font-mono text-[10px] p-4 bg-background text-foreground border border-foreground/10 h-32 overflow-y-auto whitespace-pre-wrap leading-relaxed select-none"
+            >
               {consoleLogs.map((log, index) => (
                 <div key={index} className="mb-1 border-b border-foreground/5 pb-0.5">
                   {log}
                 </div>
               ))}
-              <div ref={consoleEndRef}></div>
             </div>
           </div>
         </section>

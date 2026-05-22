@@ -176,3 +176,102 @@ body {
   background-color: var(--primary);
   color: var(--text-on-accent);
 }
+
+/* ── Ethereal Blob Animation ── */
+.ethereal-blob {
+  background: radial-gradient(circle, var(--primary) 0%, #00ccff 50%, #8000ff 100%);
+  filter: blur(40px);
+  opacity: 0.65;
+  mix-blend-mode: multiply;
+  animation: blob-spin 10s linear infinite, blob-morph 8s ease-in-out infinite alternate;
+}
+
+@keyframes blob-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes blob-morph {
+  0% { border-radius: 42% 58% 70% 30% / 45% 45% 55% 55%; }
+  50% { border-radius: 70% 30% 52% 48% / 60% 40% 60% 40%; }
+  100% { border-radius: 42% 58% 70% 30% / 45% 45% 55% 55%; }
+}
+
+.floating-pill {
+  position: absolute;
+  background: transparent;
+  backdrop-filter: none;
+  border: none;
+  padding: 0;
+  font-family: var(--font-sans);
+  z-index: 20;
+  box-shadow: none;
+  pointer-events: auto;
+  transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.floating-pill:hover {
+  transform: scale(1.08) !important;
+}
+
+.floating-fact-enter-1 {
+  animation: float-fact-in 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards, float-1 8s ease-in-out infinite;
+}
+.floating-fact-enter-2 {
+  animation: float-fact-in 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards, float-2 7s ease-in-out infinite;
+}
+.floating-fact-enter-3 {
+  animation: float-fact-in 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards, float-3 9s ease-in-out infinite;
+}
+.floating-fact-enter-4 {
+  animation: float-fact-in 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards, float-4 7.5s ease-in-out infinite;
+}
+.floating-fact-enter-5 {
+  animation: float-fact-in 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards, float-5 8.5s ease-in-out infinite;
+}
+.floating-fact-enter-6 {
+  animation: float-fact-in 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards, float-6 6.5s ease-in-out infinite;
+}
+.floating-fact-enter-7 {
+  animation: float-fact-in 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards, float-2 8.2s ease-in-out infinite;
+}
+.floating-fact-enter-8 {
+  animation: float-fact-in 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards, float-4 7.8s ease-in-out infinite;
+}
+
+@keyframes float-fact-in {
+  0% { opacity: 0; transform: scale(0.8) translateY(20px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes float-1 {
+  0% { transform: translate(0px, 0px) rotate(0deg); }
+  50% { transform: translate(8px, -12px) rotate(1deg); }
+  100% { transform: translate(0px, 0px) rotate(0deg); }
+}
+@keyframes float-2 {
+  0% { transform: translate(0px, 0px) rotate(0deg); }
+  50% { transform: translate(-12px, 10px) rotate(-1.5deg); }
+  100% { transform: translate(0px, 0px) rotate(0deg); }
+}
+@keyframes float-3 {
+  0% { transform: translate(0px, 0px) rotate(0deg); }
+  50% { transform: translate(10px, 10px) rotate(0.8deg); }
+  100% { transform: translate(0px, 0px) rotate(0deg); }
+}
+@keyframes float-4 {
+  0% { transform: translate(0px, 0px) rotate(0deg); }
+  50% { transform: translate(-10px, -10px) rotate(-1deg); }
+  100% { transform: translate(0px, 0px) rotate(0deg); }
+}
+@keyframes float-5 {
+  0% { transform: translate(0px, 0px) rotate(0deg); }
+  50% { transform: translate(12px, -6px) rotate(1.2deg); }
+  100% { transform: translate(0px, 0px) rotate(0deg); }
+}
+@keyframes float-6 {
+  0% { transform: translate(0px, 0px) rotate(0deg); }
+  50% { transform: translate(-8px, 12px) rotate(-0.8deg); }
+  100% { transform: translate(0px, 0px) rotate(0deg); }
+}
+
