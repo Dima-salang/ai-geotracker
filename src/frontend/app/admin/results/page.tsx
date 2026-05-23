@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import React from "react";
 import { useEffect, useState, useRef } from "react";
 
 interface ScanResult {
@@ -34,6 +35,7 @@ export default function ResultCRUD() {
   const [scans, setScans] = useState<Scan[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState("");
+  const [expandedResultIds, setExpandedResultIds] = useState<Record<string, boolean>>({});
   
   // Pagination & Filtering
   const [limit] = useState(10);
@@ -327,58 +329,151 @@ export default function ResultCRUD() {
                   </tr>
                 </thead>
                 <tbody>
-                  {paginatedResults.map((r) => (
-                    <tr key={r.id} className="border-b border-foreground/5 hover:bg-surface-container-lowest">
-                      <td className="p-4 font-mono text-foreground/60">{r.id.slice(0, 8)}...</td>
-                      <td className="p-4 font-bold text-foreground uppercase">
-                        {r.provider}
-                        {r.model && (
-                          <span className="block font-mono text-[9px] text-text-muted lowercase tracking-tighter normal-case font-medium mt-1 select-all bg-foreground/5 px-1.5 py-0.5 rounded border border-foreground/5 max-w-[140px] truncate">
-                            {r.model.replace(/^openrouter\//, "").replace(/^openrouter_/, "")}
-                          </span>
+                  {paginatedResults.map((r) => {
+                    let parsedPrompts: any[] = [];
+                    if (r.raw_response) {
+                      try {
+                        parsedPrompts = JSON.parse(r.raw_response);
+                      } catch (e) {
+                        console.error(e);
+                      }
+                    }
+
+                    return (
+                      <React.Fragment key={r.id}>
+                        <tr className="border-b border-foreground/5 hover:bg-surface-container-lowest">
+                          <td className="p-4 font-mono text-foreground/60">{r.id.slice(0, 8)}...</td>
+                          <td className="p-4 font-bold text-foreground uppercase">
+                            {r.provider}
+                            {r.model && (
+                              <span className="block font-mono text-[9px] text-text-muted lowercase tracking-tighter normal-case font-medium mt-1 select-all bg-foreground/5 px-1.5 py-0.5 rounded border border-foreground/5 max-w-[140px] truncate">
+                                {r.model.replace(/^openrouter\//, "").replace(/^openrouter_/, "")}
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-4 font-mono">
+                            {r.score !== null ? `${r.score} / 100` : "N/A"}
+                            {r.rank_position !== null && (
+                              <span className="ml-2 font-mono text-[10px] bg-foreground/5 text-text-muted px-1.5 py-0.5 border border-foreground/10 font-bold">
+                                Rank #{r.rank_position}
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-4 font-mono text-foreground/75">
+                            <div className="flex gap-2">
+                              <span className={r.mentioned ? "text-emerald-600 font-bold" : "text-text-muted"}>[Mention: {r.mentioned ? "Yes" : "No"}]</span>
+                              <span className={r.domain_match ? "text-emerald-600 font-bold" : "text-text-muted"}>[Domain Match: {r.domain_match ? "Yes" : "No"}]</span>
+                              <span className={r.actionable ? "text-primary font-bold" : "text-text-muted"}>[Actionable: {r.actionable ? "Yes" : "No"}]</span>
+                            </div>
+                          </td>
+                          <td className="p-4 font-mono">
+                            <span className={`px-2 py-0.5 font-bold uppercase ${
+                              r.status === "green" ? "bg-emerald-600/10 text-emerald-600 border border-emerald-600/20" :
+                              r.status === "yellow" ? "bg-amber-600/10 text-amber-600 border border-amber-600/20" :
+                              "bg-rose-600/10 text-rose-600 border border-rose-600/20"
+                            }`}>
+                              {r.status}
+                            </span>
+                          </td>
+                          <td className="p-4 font-mono text-foreground/60">{r.scan_id.slice(0, 8)}...</td>
+                          <td className="p-4 text-right flex justify-end gap-3">
+                            <button
+                              onClick={() => setExpandedResultIds(prev => ({ ...prev, [r.id]: !prev[r.id] }))}
+                              className="font-mono text-[10px] bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 px-3 py-1 uppercase font-bold transition-all"
+                            >
+                              {expandedResultIds[r.id] ? "[Hide]" : "[Inspect]"}
+                            </button>
+                            <button
+                              onClick={() => handleOpenEditModal(r)}
+                              className="font-mono text-[10px] border border-foreground/20 hover:border-foreground text-foreground px-3 py-1 uppercase font-bold transition-all"
+                            >
+                              [Edit]
+                            </button>
+                            <button
+                              onClick={() => handleDelete(r.id, r.provider)}
+                              className="font-mono text-[10px] border border-rose-600/30 hover:border-rose-600 text-rose-600 px-3 py-1 uppercase font-bold transition-all"
+                            >
+                              [Delete]
+                            </button>
+                          </td>
+                        </tr>
+                        {expandedResultIds[r.id] && (
+                          <tr className="bg-[#FAF9F6] border-b border-foreground/10 animate-in fade-in duration-200">
+                            <td colSpan={7} className="p-6">
+                              <div className="border border-foreground/10 bg-background p-6 space-y-4">
+                                <span className="font-mono text-[10px] text-primary uppercase font-bold tracking-widest block mb-2">
+                                  ◆ Parsed Simulated Prompt Outcomes ({parsedPrompts.length} scenarios)
+                                </span>
+                                
+                                {parsedPrompts.length > 0 ? (
+                                  <div className="overflow-x-auto">
+                                    <table className="w-full text-xs text-left border-collapse">
+                                      <thead>
+                                        <tr className="border-b border-foreground/10 font-mono text-[9px] text-text-muted uppercase">
+                                          <th className="pb-2 w-[30%]">Prompt Statement</th>
+                                          <th className="pb-2 text-center">Mentioned</th>
+                                          <th className="pb-2 text-center">Rank</th>
+                                          <th className="pb-2 text-center">Web Match</th>
+                                          <th className="pb-2 text-center">Actionable</th>
+                                          <th className="pb-2">Competitors Cited</th>
+                                          <th className="pb-2 w-[25%]">AI Reasoning</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {parsedPrompts.map((p: any, pIdx: number) => (
+                                          <tr key={pIdx} className="border-b border-foreground/5 py-2 hover:bg-surface-container-lowest transition-all">
+                                            <td className="py-2.5 font-mono text-[10px] pr-2 text-foreground font-semibold">{p.prompt}</td>
+                                            <td className="py-2.5 text-center">
+                                              <span className={`px-1.5 py-0.5 font-mono text-[9px] font-bold ${
+                                                p.mentioned ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20" : "bg-rose-500/10 text-rose-600 border border-rose-500/20"
+                                              }`}>
+                                                {p.mentioned ? "YES" : "NO"}
+                                              </span>
+                                            </td>
+                                            <td className="py-2.5 text-center font-mono font-bold">
+                                              {p.rank_position != null ? `#${p.rank_position}` : "-"}
+                                            </td>
+                                            <td className="py-2.5 text-center">
+                                              <span className={`px-1.5 py-0.5 font-mono text-[9px] font-bold ${
+                                                p.domain_match ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20" : "bg-rose-500/10 text-rose-600 border border-rose-500/20"
+                                              }`}>
+                                                {p.domain_match ? "YES" : "NO"}
+                                              </span>
+                                            </td>
+                                            <td className="py-2.5 text-center">
+                                              <span className={`px-1.5 py-0.5 font-mono text-[9px] font-bold ${
+                                                p.actionable ? "bg-primary/10 text-primary border border-primary/20" : "bg-rose-500/10 text-rose-600 border border-rose-500/20"
+                                              }`}>
+                                                {p.actionable ? "YES" : "NO"}
+                                              </span>
+                                            </td>
+                                            <td className="py-2.5 font-mono text-[10px] text-text-muted">
+                                              {p.competitors && p.competitors.length > 0 ? (
+                                                <div className="flex flex-wrap gap-1">
+                                                  {p.competitors.map((comp: string, cIdx: number) => (
+                                                    <span key={cIdx} className="bg-foreground/5 border border-foreground/10 px-1 py-0.5 text-foreground uppercase text-[9px]">
+                                                      {comp}
+                                                    </span>
+                                                  ))}
+                                                </div>
+                                              ) : "-"}
+                                            </td>
+                                            <td className="py-2.5 font-sans text-[11px] leading-relaxed text-text-muted pr-2">{p.reason || p.reasoning || "-"}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                ) : (
+                                  <span className="font-mono text-xs text-text-muted italic">No raw prompt details mapped in response payload.</span>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
                         )}
-                      </td>
-                      <td className="p-4 font-mono">
-                        {r.score !== null ? `${r.score} / 100` : "N/A"}
-                        {r.rank_position !== null && (
-                          <span className="ml-2 font-mono text-[10px] bg-foreground/5 text-text-muted px-1.5 py-0.5 border border-foreground/10 font-bold">
-                            Rank #{r.rank_position}
-                          </span>
-                        )}
-                      </td>
-                      <td className="p-4 font-mono text-foreground/75">
-                        <div className="flex gap-2">
-                          <span className={r.mentioned ? "text-emerald-600 font-bold" : "text-text-muted"}>[Mention: {r.mentioned ? "Yes" : "No"}]</span>
-                          <span className={r.domain_match ? "text-emerald-600 font-bold" : "text-text-muted"}>[Domain Match: {r.domain_match ? "Yes" : "No"}]</span>
-                          <span className={r.actionable ? "text-primary font-bold" : "text-text-muted"}>[Actionable: {r.actionable ? "Yes" : "No"}]</span>
-                        </div>
-                      </td>
-                      <td className="p-4 font-mono">
-                        <span className={`px-2 py-0.5 font-bold uppercase ${
-                          r.status === "green" ? "bg-emerald-600/10 text-emerald-600 border border-emerald-600/20" :
-                          r.status === "yellow" ? "bg-amber-600/10 text-amber-600 border border-amber-600/20" :
-                          "bg-rose-600/10 text-rose-600 border border-rose-600/20"
-                        }`}>
-                          {r.status}
-                        </span>
-                      </td>
-                      <td className="p-4 font-mono text-foreground/60">{r.scan_id.slice(0, 8)}...</td>
-                      <td className="p-4 text-right flex justify-end gap-3">
-                        <button
-                          onClick={() => handleOpenEditModal(r)}
-                          className="font-mono text-[10px] border border-foreground/20 hover:border-foreground text-foreground px-3 py-1 uppercase font-bold transition-all"
-                        >
-                          [Edit]
-                        </button>
-                        <button
-                          onClick={() => handleDelete(r.id, r.provider)}
-                          className="font-mono text-[10px] border border-rose-600/30 hover:border-rose-600 text-rose-600 px-3 py-1 uppercase font-bold transition-all"
-                        >
-                          [Delete]
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                      </React.Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

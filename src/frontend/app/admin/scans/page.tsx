@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import React from "react";
 import { useEffect, useState, useRef } from "react";
 
 interface Scan {
@@ -26,6 +27,7 @@ export default function ScanCRUD() {
   const [businesses, setBusinesses] = useState<Business[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState("");
+  const [expandedScanIds, setExpandedScanIds] = useState<Record<string, boolean>>({});
   
   // Pagination & Filtering
   const [limit] = useState(10);
@@ -307,48 +309,116 @@ export default function ScanCRUD() {
                 </thead>
                 <tbody>
                   {paginatedScans.map((s) => (
-                    <tr key={s.id} className="border-b border-foreground/5 hover:bg-surface-container-lowest">
-                      <td className="p-4 font-mono text-foreground/80">{s.id}</td>
-                      <td className="p-4 font-bold text-foreground">
-                        <div>{s.business_name}</div>
-                        <div className="font-mono text-[10px] text-text-muted normal-case font-normal mt-0.5">{s.business_domain}</div>
-                      </td>
-                      <td className="p-4 font-mono">
-                        {s.overall_score !== null ? (
-                          <span className={`px-2 py-0.5 font-bold ${
-                            s.overall_score >= 80 ? "bg-emerald-600/10 text-emerald-600 border border-emerald-600/20" :
-                            s.overall_score >= 50 ? "bg-amber-600/10 text-amber-600 border border-amber-600/20" :
+                    <React.Fragment key={s.id}>
+                      <tr className="border-b border-foreground/5 hover:bg-surface-container-lowest">
+                        <td className="p-4 font-mono text-foreground/80">{s.id}</td>
+                        <td className="p-4 font-bold text-foreground">
+                          <div>{s.business_name}</div>
+                          <div className="font-mono text-[10px] text-text-muted normal-case font-normal mt-0.5">{s.business_domain}</div>
+                        </td>
+                        <td className="p-4 font-mono">
+                          {s.overall_score !== null ? (
+                            <span className={`px-2 py-0.5 font-bold ${
+                              s.overall_score >= 80 ? "bg-emerald-600/10 text-emerald-600 border border-emerald-600/20" :
+                              s.overall_score >= 50 ? "bg-amber-600/10 text-amber-600 border border-amber-600/20" :
+                              "bg-rose-600/10 text-rose-600 border border-rose-600/20"
+                            }`}>
+                              {s.overall_score} / 100
+                            </span>
+                          ) : "N/A"}
+                        </td>
+                        <td className="p-4 font-mono">
+                          <span className={`px-2 py-0.5 font-bold uppercase ${
+                            s.status === "complete" ? "bg-emerald-600/10 text-emerald-600 border border-emerald-600/20" :
+                            s.status === "pending" ? "bg-primary/10 text-primary border border-primary/20 animate-pulse" :
                             "bg-rose-600/10 text-rose-600 border border-rose-600/20"
                           }`}>
-                            {s.overall_score} / 100
+                            {s.status}
                           </span>
-                        ) : "N/A"}
-                      </td>
-                      <td className="p-4 font-mono">
-                        <span className={`px-2 py-0.5 font-bold uppercase ${
-                          s.status === "complete" ? "bg-emerald-600/10 text-emerald-600 border border-emerald-600/20" :
-                          s.status === "pending" ? "bg-primary/10 text-primary border border-primary/20 animate-pulse" :
-                          "bg-rose-600/10 text-rose-600 border border-rose-600/20"
-                        }`}>
-                          {s.status}
-                        </span>
-                      </td>
-                      <td className="p-4 font-mono text-foreground/60">{new Date(s.created_at).toLocaleString()}</td>
-                      <td className="p-4 text-right flex justify-end gap-3">
-                        <button
-                          onClick={() => handleOpenEditModal(s)}
-                          className="font-mono text-[10px] border border-foreground/20 hover:border-foreground text-foreground px-3 py-1 uppercase font-bold transition-all"
-                        >
-                          [Edit]
-                        </button>
-                        <button
-                          onClick={() => handleDelete(s.id, s.business_name)}
-                          className="font-mono text-[10px] border border-rose-600/30 hover:border-rose-600 text-rose-600 px-3 py-1 uppercase font-bold transition-all"
-                        >
-                          [Delete]
-                        </button>
-                      </td>
-                    </tr>
+                        </td>
+                        <td className="p-4 font-mono text-foreground/60">{new Date(s.created_at).toLocaleString()}</td>
+                        <td className="p-4 text-right flex justify-end gap-3">
+                          <button
+                            onClick={() => setExpandedScanIds(prev => ({ ...prev, [s.id]: !prev[s.id] }))}
+                            className="font-mono text-[10px] bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 px-3 py-1 uppercase font-bold transition-all"
+                          >
+                            {expandedScanIds[s.id] ? "[Hide]" : "[Inspect]"}
+                          </button>
+                          <button
+                            onClick={() => handleOpenEditModal(s)}
+                            className="font-mono text-[10px] border border-foreground/20 hover:border-foreground text-foreground px-3 py-1 uppercase font-bold transition-all"
+                          >
+                            [Edit]
+                          </button>
+                          <button
+                            onClick={() => handleDelete(s.id, s.business_name)}
+                            className="font-mono text-[10px] border border-rose-600/30 hover:border-rose-600 text-rose-600 px-3 py-1 uppercase font-bold transition-all"
+                          >
+                            [Delete]
+                          </button>
+                        </td>
+                      </tr>
+                      {expandedScanIds[s.id] && (
+                        <tr className="bg-[#FAF9F6] border-b border-foreground/10 animate-in fade-in duration-200">
+                          <td colSpan={6} className="p-6">
+                            <div className="border border-foreground/10 bg-background p-6 space-y-6">
+                              {/* 1. Summary Metrics */}
+                              <div>
+                                <span className="font-mono text-[10px] text-primary uppercase font-bold tracking-widest block mb-3">
+                                  ◆ Consensual Summary Metrics
+                                </span>
+                                {s.summary ? (
+                                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                    <div className="border border-foreground/10 p-3 bg-[#FAF9F6] flex flex-col justify-center items-center text-center">
+                                      <span className="font-mono text-[10px] text-emerald-600 font-bold block mb-1 uppercase">Optimal Engines</span>
+                                      <span className="font-display text-2xl font-bold">{s.summary.green ?? 0}</span>
+                                    </div>
+                                    <div className="border border-foreground/10 p-3 bg-[#FAF9F6] flex flex-col justify-center items-center text-center">
+                                      <span className="font-mono text-[10px] text-amber-600 font-bold block mb-1 uppercase">Warning Engines</span>
+                                      <span className="font-display text-2xl font-bold">{s.summary.yellow ?? 0}</span>
+                                    </div>
+                                    <div className="border border-foreground/10 p-3 bg-[#FAF9F6] flex flex-col justify-center items-center text-center">
+                                      <span className="font-mono text-[10px] text-rose-600 font-bold block mb-1 uppercase">Critical Deficit Engines</span>
+                                      <span className="font-display text-2xl font-bold">{s.summary.red ?? 0}</span>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <span className="font-sans text-xs text-text-muted italic">No summary statistics computed.</span>
+                                )}
+                              </div>
+
+                              {/* 2. Recommendations */}
+                              <div>
+                                <span className="font-mono text-[10px] text-primary uppercase font-bold tracking-widest block mb-3">
+                                  ◆ Actionable Strategy Blueprint ({s.recommendations?.length || 0} issues)
+                                </span>
+                                {s.recommendations && s.recommendations.length > 0 ? (
+                                  <div className="space-y-3">
+                                    {s.recommendations.map((rec: any, idx: number) => (
+                                      <div key={idx} className="border border-foreground/5 bg-[#FAF9F6] p-4 flex gap-4">
+                                        <div className="flex-shrink-0 animate-in fade-in duration-300">
+                                          <span className={`font-mono text-[9px] font-bold px-2 py-0.5 text-white ${
+                                            rec.severity === "high" ? "bg-rose-600" : rec.severity === "medium" ? "bg-amber-500" : "bg-slate-500"
+                                          }`}>
+                                            {rec.severity?.toUpperCase()}
+                                          </span>
+                                        </div>
+                                        <div>
+                                          <h4 className="font-bold text-xs mb-1 text-foreground">{rec.issue}</h4>
+                                          <p className="font-sans text-xs text-text-muted leading-relaxed">{rec.recommendation}</p>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <span className="font-sans text-xs text-text-muted italic">No recommendations registered.</span>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   ))}
                 </tbody>
               </table>
