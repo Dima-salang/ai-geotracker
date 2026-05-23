@@ -448,3 +448,54 @@ def test_scan_rate_limiting(client, db_session):
     assert "abuse detection" in res.json()["detail"].lower()
 
 
+def test_scan_rate_limiting_premium_bypass(client, db_session):
+    # Create a premium user
+    premium_user_id = uuid.uuid4()
+    premium_user = User(
+        id=premium_user_id,
+        organization_id=uuid.UUID("00000000-0000-0000-0000-000000000000"),
+        email="premium@client.com",
+        first_name="Premium",
+        last_name="Client",
+        tier="premium"
+    )
+    db_session.add(premium_user)
+    db_session.commit()
+
+    # Create Business and 3 Scans for limited_premium.com
+    biz = Business(
+        id=uuid.uuid4(),
+        organization_id=uuid.UUID("00000000-0000-0000-0000-000000000000"),
+        name="Rate Limited Biz",
+        domain="limited_premium.com",
+        industry="medical",
+        primary_city="Dallas",
+        primary_state="TX",
+        country="US"
+    )
+    db_session.add(biz)
+    db_session.commit()
+
+    for _ in range(3):
+        scan = Scan(
+            business_id=biz.id,
+            user_id=premium_user_id,
+            status="complete",
+            overall_score=80
+        )
+        db_session.add(scan)
+    db_session.commit()
+
+    # Now make POST /api/v1/scan for limited_premium.com WITH premium user_id in payload
+    with patch("app.services.scan_service.ScanService.scan_event_stream") as mock_stream:
+        mock_stream.return_value = AsyncMock()
+        res = client.post("/api/v1/scan", json={
+            "domain": "limited_premium.com",
+            "business_name": "Rate Limited Biz",
+            "user_id": str(premium_user_id)
+        })
+        
+        # Should NOT be blocked with 403 (should successfully call stream and return 200)
+        assert res.status_code == 200
+
+
