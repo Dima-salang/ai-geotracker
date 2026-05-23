@@ -114,13 +114,19 @@ export default function ResultsDashboard({
     });
   });
 
-  const totalPossibleCitations = Math.max(1, providerResults.length * 3); // 3 prompts
-  const clientSOV = Math.min(100, Math.round((clientMentionsCount / totalPossibleCitations) * 100));
+  // Calculate total mentions pool (client + all competitors mentions combined)
+  const competitorsTotalMentions = Object.values(competitorMentionsMap).reduce((a, b) => a + b, 0);
+  const totalMentionsPool = clientMentionsCount + competitorsTotalMentions;
+  
+  // Safe fallback if the pool is zero
+  const poolForCalc = totalMentionsPool > 0 ? totalMentionsPool : 1;
+
+  const clientSOV = Math.min(100, Math.round((clientMentionsCount / poolForCalc) * 100));
 
   const competitorsSOVList = Object.entries(competitorMentionsMap)
     .map(([name, count]) => ({
       name: name.split(" ").map(w => w.charAt(0) + w.slice(1).toLowerCase()).join(" "),
-      sov: Math.min(100, Math.round((count / totalPossibleCitations) * 100)),
+      sov: Math.min(100, Math.round((count / poolForCalc) * 100)),
     }))
     .sort((a, b) => b.sov - a.sov)
     .slice(0, 4); // top 4 competitors
@@ -176,10 +182,10 @@ export default function ResultsDashboard({
     
     if (pr.error) {
       return {
-        bg: "bg-rose-950/10 text-rose-600 border-rose-900/20 font-medium",
+        bg: "bg-[#0055FF]/[0.03] text-rose-600 border-[#0055FF]/20 font-medium",
         label: "✗",
         color: "text-rose-600",
-        tooltip: pr.error,
+        tooltip: "No mention",
       };
     }
 
@@ -690,6 +696,131 @@ export default function ResultsDashboard({
 
           <div className="mt-6 pt-4 border-t border-black/10 font-mono text-[9px] text-text-muted leading-normal">
             *Executive consensus compiled over a database of all active model queries.
+          </div>
+        </div>
+      </div>
+
+      {/* ═══════════════════════ PLACEMENT 4: INTEGRATED PRICING CTA (UPSERV.AI) ═══════════════════════ */}
+      <div className="p-8 md:p-12 bg-white text-center border-t border-foreground/10">
+        <div className="max-w-5xl mx-auto space-y-8">
+          <div className="text-center space-y-3">
+            <span className="font-mono text-[10px] text-primary uppercase font-bold tracking-[0.25em] block animate-pulse">
+              ◆ AI CITATION DEFENSE ALLIANCE ◆
+            </span>
+            <h2 className="font-display text-[2.2rem] md:text-[2.8rem] font-black uppercase tracking-tight leading-none text-black">
+              You got a visibility score of {overallScore}/100.
+            </h2>
+            <p className="font-sans text-xs md:text-sm text-text-muted max-w-2xl mx-auto font-bold mt-2">
+              {overallScore < 80 
+                ? "We can fix that. Let's claim your digital footprint and repair missing references before competitors dominate." 
+                : "Do not be complacent—competitors are actively deploying schema updates to hog your search share."}
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pt-4">
+            {/* Pro Plan Card */}
+            <div className="border border-foreground/10 bg-[#FAF9F6] p-8 text-left flex flex-col justify-between relative shadow-[4px_4px_0px_0px_rgba(0,0,0,0.05)] hover:scale-[1.01] transition-all">
+              <div className="absolute top-3 right-3 font-mono text-[9px] bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 uppercase font-bold">
+                GROWTH LEVEL
+              </div>
+              <div className="space-y-4">
+                <div>
+                  <h3 className="font-display text-2xl font-black uppercase tracking-tight text-black">PRO DEFENSE</h3>
+                  <p className="font-sans text-xs text-text-muted mt-1 leading-relaxed">
+                    Secure continuous citation protection, verify booking links in model indexes, and repair missing references.
+                  </p>
+                </div>
+
+                <div className="flex items-baseline gap-1 py-2 border-y border-foreground/5">
+                  <span className="font-mono text-4xl font-extrabold text-primary">$99</span>
+                  <span className="font-mono text-xs text-text-muted uppercase font-bold">/ Month</span>
+                </div>
+
+                <ul className="space-y-2 font-mono text-[10px] text-black/80 font-bold">
+                  <li className="flex items-center gap-2">
+                    <span className="text-emerald-600 text-xs">✔</span> Daily automatic audit updates
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className="text-emerald-600 text-xs">✔</span> Repair missing listing links
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className="text-emerald-600 text-xs">✔</span> Track 50 search prompts in parallel
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className="text-emerald-600 text-xs">✔</span> Standard schema generator engine
+                  </li>
+                </ul>
+              </div>
+
+              <div className="pt-6">
+                <button
+                  onClick={() => {
+                    const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+                    fetch(`${BACKEND_URL}/api/v1/telemetry/engagement`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ event_type: "click_cta", target: "checkout_pro_plan" })
+                    }).catch(err => console.error(err));
+                    alert("Connecting to Upserv.ai Core: Defend/Claim your conversational footprint instantly on Pro.");
+                  }}
+                  className="w-full font-mono text-xs bg-primary text-white px-6 py-4 hover:bg-[#0044DD] transition-all font-black uppercase tracking-widest border border-black/10 cursor-pointer"
+                >
+                  START PRO DEFENSE
+                </button>
+              </div>
+            </div>
+
+            {/* Enterprise Plan Card */}
+            <div className="border border-foreground/10 bg-[#FAF9F6] p-8 text-left flex flex-col justify-between relative shadow-[4px_4px_0px_0px_rgba(0,0,0,0.05)] hover:scale-[1.01] transition-all">
+              <div className="absolute top-3 right-3 font-mono text-[9px] bg-emerald-600/10 text-emerald-600 border border-emerald-600/20 px-2 py-0.5 uppercase font-bold">
+                COMPETITIVE MAX
+              </div>
+              <div className="space-y-4">
+                <div>
+                  <h3 className="font-display text-2xl font-black uppercase tracking-tight text-black">ENTERPRISE MOAT</h3>
+                  <p className="font-sans text-xs text-text-muted mt-1 leading-relaxed">
+                    Full brand presence protection across conversational networks. Built for franchise and multi-location companies.
+                  </p>
+                </div>
+
+                <div className="flex items-baseline gap-1 py-2 border-y border-foreground/5">
+                  <span className="font-mono text-4xl font-extrabold text-emerald-600">$299</span>
+                  <span className="font-mono text-xs text-text-muted uppercase font-bold">/ Month</span>
+                </div>
+
+                <ul className="space-y-2 font-mono text-[10px] text-black/80 font-bold">
+                  <li className="flex items-center gap-2">
+                    <span className="text-emerald-600 text-xs">✔</span> All Pro Plan features included
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className="text-emerald-600 text-xs">✔</span> Dedicated model auditing portal
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className="text-emerald-600 text-xs">✔</span> Track unlimited models & queries
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className="text-emerald-600 text-xs">✔</span> Multi-location analytics dashboard
+                  </li>
+                </ul>
+              </div>
+
+              <div className="pt-6">
+                <button
+                  onClick={() => {
+                    const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+                    fetch(`${BACKEND_URL}/api/v1/telemetry/engagement`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ event_type: "click_cta", target: "checkout_enterprise_plan" })
+                    }).catch(err => console.error(err));
+                    alert("Connecting to Upserv.ai Core: Defend/Claim your conversational footprint instantly on Enterprise.");
+                  }}
+                  className="w-full font-mono text-xs bg-black text-white px-6 py-4 hover:bg-[#0044DD] transition-all font-black uppercase tracking-widest border border-black/10 cursor-pointer"
+                >
+                  START ENTERPRISE MOAT
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
