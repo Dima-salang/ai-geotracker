@@ -4,6 +4,8 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy.engine import Engine
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./geotracker.db")
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 # SQLite needs special settings for thread safety in dev
 connect_args = {}
