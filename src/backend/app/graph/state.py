@@ -1,5 +1,5 @@
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class ScanRequest(BaseModel):
@@ -12,6 +12,15 @@ class ScanRequest(BaseModel):
     service_focuses: list[str] = []
     target_suburbs: list[str] = []
     user_id: Optional[str] = None
+
+    @field_validator("domain", mode="before")
+    @classmethod
+    def clean_domain(cls, v: str) -> str:
+        if not isinstance(v, str):
+            return v
+        v = v.strip().lower()
+        v = v.replace("https://", "").replace("http://", "").replace("www.", "")
+        return v.split("/")[0]
 
 
 
