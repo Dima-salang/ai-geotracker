@@ -748,6 +748,13 @@ class TestSearchGroundingInjection:
         mock_cfg = {"name": "groq", "model": "groq/llama-3.3-70b-versatile"}
         prompts = ["Best dentist in Houston"]
         
+        # Mock SessionLocal to return True for enable_search_grounding
+        mock_db = mocker.MagicMock()
+        mock_cfg_db = mocker.MagicMock()
+        mock_cfg_db.value = "true"
+        mock_db.query().filter().first.return_value = mock_cfg_db
+        mocker.patch("app.models.database.SessionLocal", return_value=mock_db)
+
         mocker.patch(
             "app.services.provider_service.ProviderService.resolve_provider_call_args",
             return_value={"model": "groq/llama-3.3-70b-versatile", "timeout": 30}
