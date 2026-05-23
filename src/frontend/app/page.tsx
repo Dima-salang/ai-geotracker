@@ -104,6 +104,7 @@ export default function LandingPage() {
   const [showDashboard, setShowDashboard] = useState(false);
   const [researchedFacts, setResearchedFacts] = useState<Array<{ id: string; label: string; value: string }>>([]);
   const [liveDetails, setLiveDetails] = useState<ResearchedDetails | null>(null);
+  const [mockUserSession, setMockUserSession] = useState<{ id: string; email: string; tier: string } | null>(null);
 
   // Live computed results for real-time streaming inside ResultsDashboard
   const activeResults = loading ? streamingProviders : (scanResult?.providerResults || []);
@@ -207,6 +208,7 @@ export default function LandingPage() {
           primary_city: "",
           primary_state: "",
           country: "",
+          user_id: mockUserSession ? mockUserSession.id : undefined,
         }),
       });
 
@@ -491,9 +493,22 @@ export default function LandingPage() {
         </div>
         <button
           id="sign-in-btn"
-          className="font-mono text-xs tracking-tighter bg-primary text-white px-6 py-2 hover:bg-primary-container transition-all"
+          onClick={() => {
+            if (mockUserSession) {
+              setMockUserSession(null);
+              alert("Logged out from simulated premium session. Free guest limits apply.");
+            } else {
+              setMockUserSession({
+                id: "00000000-0000-0000-0000-000000000001",
+                email: "manager@corporatefranchise.com",
+                tier: "enterprise"
+              });
+              alert("Logged in as premium manager Alex Manager. Infinite scans unlocked!");
+            }
+          }}
+          className="font-mono text-xs tracking-tighter bg-primary text-white px-6 py-2 hover:bg-primary-container transition-all uppercase"
         >
-          SIGN_IN
+          {mockUserSession ? `[ ${mockUserSession.email.split("@")[0].toUpperCase()} (PREMIUM) / LOGOUT ]` : "SIGN_IN"}
         </button>
       </nav>
 
