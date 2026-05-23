@@ -1,7 +1,7 @@
 import os
 import httpx
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 from enum import Enum
 from app.models.schema import SystemConfig
@@ -10,12 +10,48 @@ class SearchProviders(str, Enum):
     SERPER = "serper"
     DDG = "ddg"
 
+class Sitelink(BaseModel):
+    title: str
+    link: str
+
+class PeopleAlsoAskItem(BaseModel):
+    question: str
+    snippet: str
+    title: Optional[str] = None
+    link: Optional[str] = None
+
+class RelatedSearchItem(BaseModel):
+    query: str
+
+class KnowledgeGraph(BaseModel):
+    title: Optional[str] = None
+    type: Optional[str] = None
+    website: Optional[str] = None
+    imageUrl: Optional[str] = None
+    description: Optional[str] = None
+    descriptionSource: Optional[str] = None
+    descriptionLink: Optional[str] = None
+    attributes: Optional[Dict[str, Any]] = None
+
+class SearchResultMetadata(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    rating: Optional[float] = None
+    ratingCount: Optional[int] = None
+    attributes: Optional[Dict[str, Any]] = None
+    sitelinks: Optional[List[Sitelink]] = None
+    imageUrl: Optional[str] = None
+    peopleAlsoAsk: Optional[List[PeopleAlsoAskItem]] = None
+    relatedSearches: Optional[List[RelatedSearchItem]] = None
+    knowledgeGraph: Optional[KnowledgeGraph] = None
+    searchParameters: Optional[Dict[str, Any]] = None
+
 class SearchResult(BaseModel):
     title: str
     link: str
     snippet: str
     position: int
-    metadata: Optional[Dict[str, Any]] = None
+    metadata: Optional[SearchResultMetadata] = None
 
 class SearchRequest(BaseModel):
     prompt: str
@@ -80,16 +116,71 @@ class SearchService:
         # 3. Parse Serper results
         results = []
         organic = data.get("organic", [])
+
+        # Parse global fields
+        global_paa = None
+        if "peopleAlsoAsk" in data:
+            global_paa = []
+            for paa in data["peopleAlsoAsk"]:
+                global_paa.append(PeopleAlsoAskItem(
+                    question=paa.get("question", ""),
+                    snippet=paa.get("snippet", ""),
+                    title=paa.get("title"),
+                    link=paa.get("link")
+                ))
+
+        global_related = None
+        if "relatedSearches" in data:
+            global_related = []
+            for rs in data["relatedSearches"]:
+                global_related.append(RelatedSearchItem(
+                    query=rs.get("query", "")
+                ))
+
+        global_kg = None
+        if "knowledgeGraph" in data:
+            kg_data = data["knowledgeGraph"]
+            global_kg = KnowledgeGraph(
+                title=kg_data.get("title"),
+                type=kg_data.get("type"),
+                website=kg_data.get("website"),
+                imageUrl=kg_data.get("imageUrl"),
+                description=kg_data.get("description"),
+                descriptionSource=kg_data.get("descriptionSource"),
+                descriptionLink=kg_data.get("descriptionLink"),
+                attributes=kg_data.get("attributes")
+            )
+
+        global_params = data.get("searchParameters")
+
         for i, item in enumerate(organic, 1):
+            organic_sitelinks = None
+            if "sitelinks" in item:
+                organic_sitelinks = []
+                for sl in item["sitelinks"]:
+                    organic_sitelinks.append(Sitelink(
+                        title=sl.get("title", ""),
+                        link=sl.get("link", "")
+                    ))
+
+            metadata = SearchResultMetadata(
+                rating=item.get("rating"),
+                ratingCount=item.get("ratingCount"),
+                attributes=item.get("attributes"),
+                sitelinks=organic_sitelinks,
+                imageUrl=item.get("imageUrl"),
+                peopleAlsoAsk=global_paa,
+                relatedSearches=global_related,
+                knowledgeGraph=global_kg,
+                searchParameters=global_params
+            )
+
             results.append(SearchResult(
                 title=item.get("title", ""),
                 link=item.get("link", ""),
                 snippet=item.get("snippet", ""),
                 position=item.get("position", i),
-                metadata={
-                    "sitelinks": item.get("sitelinks"),
-                    "imageUrl": item.get("imageUrl")
-                }
+                metadata=metadata
             ))
         return results
 

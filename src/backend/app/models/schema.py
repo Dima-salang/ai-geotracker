@@ -96,6 +96,7 @@ class ScanResult(Base):
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     scan_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("scans.id"), nullable=False)
     provider: Mapped[str] = mapped_column(String, nullable=False)
+    model: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     status: Mapped[str] = mapped_column(String, nullable=False)
     score: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     rank_position: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
@@ -244,6 +245,7 @@ class BusinessRead(BusinessBase):
 
 class ScanResultBase(BaseModel):
     provider: str
+    model: Optional[str] = None
     status: str
     score: Optional[int] = None
     rank_position: Optional[int] = None
@@ -302,6 +304,7 @@ class ProviderConfigBase(BaseModel):
 
 
 class ProviderConfigCreate(ProviderConfigBase):
+    id: Optional[uuid.UUID] = None
     api_key: str  # Plain text during creation, will be encrypted in DB
 
 
@@ -366,6 +369,7 @@ class SystemConfigCreate(SystemConfigBase):
 class SystemConfigRead(SystemConfigBase):
     id: uuid.UUID
     has_value: bool
+    value: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

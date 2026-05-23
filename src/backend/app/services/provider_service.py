@@ -56,8 +56,17 @@ class ProviderService:
     @staticmethod
     def create_provider_config(db: Session, data: ProviderConfigCreate) -> ProviderConfig:
         """Create or replace a provider configuration in the DB."""
-        existing = db.query(ProviderConfig).filter(ProviderConfig.provider == data.provider).first()
+        existing = None
+        if data.id:
+            existing = db.query(ProviderConfig).filter(ProviderConfig.id == data.id).first()
+        else:
+            existing = db.query(ProviderConfig).filter(
+                ProviderConfig.provider == data.provider,
+                ProviderConfig.model == data.model
+            ).first()
+
         if existing:
+            existing.provider = data.provider
             existing.model = data.model
             existing.api_base = data.api_base
             existing.is_active = data.is_active
@@ -69,6 +78,7 @@ class ProviderService:
             return existing
 
         config = ProviderConfig(
+            id=data.id or uuid.uuid4(),
             provider=data.provider,
             model=data.model,
             api_base=data.api_base,
@@ -160,8 +170,8 @@ class ProviderService:
         """
         if call_args is None:
             call_args = ProviderService.resolve_provider_call_args(provider, db)
+        merged_args = {**call_args, **kwargs}
         return await litellm.acompletion(
             messages=messages,
-            **call_args,
-            **kwargs
+            **merged_args
         )
