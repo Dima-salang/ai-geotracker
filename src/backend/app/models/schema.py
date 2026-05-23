@@ -61,6 +61,10 @@ class Business(Base):
     country: Mapped[str] = mapped_column(String, nullable=False)
     service_focuses: Mapped[List[str]] = mapped_column(JSON, default=list)
     target_suburbs: Mapped[List[str]] = mapped_column(JSON, default=list)
+    latitude: Mapped[Optional[float]] = mapped_column(JSON, nullable=True)
+    longitude: Mapped[Optional[float]] = mapped_column(JSON, nullable=True)
+    google_maps_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    formatted_address: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), 
@@ -97,6 +101,7 @@ class ScanResult(Base):
     scan_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("scans.id"), nullable=False)
     provider: Mapped[str] = mapped_column(String, nullable=False)
     model: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    display_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     status: Mapped[str] = mapped_column(String, nullable=False)
     score: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     rank_position: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
@@ -120,6 +125,7 @@ class ProviderConfig(Base):
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     provider: Mapped[str] = mapped_column(String, nullable=False)
     model: Mapped[str] = mapped_column(String, nullable=False)
+    display_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     encrypted_api_key: Mapped[str] = mapped_column(String, nullable=False)
     api_base: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -175,6 +181,15 @@ class SystemConfig(Base):
         else:
             self.value = plain_text
             self.is_encrypted = False
+
+
+class EngagementEvent(Base):
+    __tablename__ = "engagement_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    event_type: Mapped[str] = mapped_column(String, nullable=False) # e.g. "click_cta", "view_report", "copy_link"
+    target: Mapped[Optional[str]] = mapped_column(String, nullable=True) # e.g. "cta_check_visibility", "cta_unlock_full_audits", "scan_id"
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
 # ==========================================================
@@ -246,6 +261,7 @@ class BusinessRead(BusinessBase):
 class ScanResultBase(BaseModel):
     provider: str
     model: Optional[str] = None
+    display_name: Optional[str] = None
     status: str
     score: Optional[int] = None
     rank_position: Optional[int] = None
@@ -298,6 +314,7 @@ class ScanRead(ScanBase):
 class ProviderConfigBase(BaseModel):
     provider: str
     model: str
+    display_name: Optional[str] = None
     api_base: Optional[str] = None
     is_active: bool = True
     timeout_seconds: int = 15
@@ -347,6 +364,8 @@ class ScanUpdate(BaseModel):
 
 
 class ScanResultUpdate(BaseModel):
+    model: Optional[str] = None
+    display_name: Optional[str] = None
     status: Optional[str] = None
     score: Optional[int] = None
     rank_position: Optional[int] = None
@@ -379,4 +398,18 @@ class SystemConfigRead(SystemConfigBase):
 class SystemConfigUpdateSchema(BaseModel):
     key: str
     value: str
+
+
+class EngagementEventCreate(BaseModel):
+    event_type: str
+    target: Optional[str] = None
+
+
+class EngagementEventRead(BaseModel):
+    id: uuid.UUID
+    event_type: str
+    target: Optional[str] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
 
