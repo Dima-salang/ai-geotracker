@@ -16,7 +16,8 @@ from app.models.schema import (
     BusinessRead, BusinessUpdate,
     ScanCreate, ScanRead, ScanUpdate,
     ScanResult, ScanResultCreate, ScanResultRead, ScanResultUpdate,
-    SystemConfig, SystemConfigRead, SystemConfigUpdateSchema
+    SystemConfig, SystemConfigRead, SystemConfigUpdateSchema,
+    EngagementEvent, EngagementEventCreate, EngagementEventRead
 )
 from app.services.user_service import UserService
 from app.services.provider_service import ProviderService
@@ -79,6 +80,7 @@ def get_providers(db: Session = Depends(get_db)):
             config = ProviderConfig(
                 provider=provider,
                 model=defaults["model"],
+                display_name=defaults.get("display_name"),
                 api_base=defaults["api_base"],
                 is_active=True,
                 timeout_seconds=defaults["timeout"]
@@ -93,6 +95,7 @@ def get_providers(db: Session = Depends(get_db)):
             "id": str(c.id),
             "provider": c.provider,
             "model": c.model,
+            "display_name": c.display_name,
             "api_base": c.api_base,
             "is_active": c.is_active,
             "timeout_seconds": c.timeout_seconds,
@@ -110,6 +113,7 @@ def update_provider_settings(data: ProviderConfigCreate, db: Session = Depends(g
         "id": str(config.id),
         "provider": config.provider,
         "model": config.model,
+        "display_name": config.display_name,
         "api_base": config.api_base,
         "is_active": config.is_active,
         "timeout_seconds": config.timeout_seconds,
@@ -395,6 +399,10 @@ def get_visibility_report_details(id: uuid.UUID, db: Session = Depends(get_db)):
         "business_city": scan.business.primary_city,
         "business_state": scan.business.primary_state,
         "business_service_focuses": scan.business.service_focuses,
+        "business_latitude": scan.business.latitude,
+        "business_longitude": scan.business.longitude,
+        "business_google_maps_url": scan.business.google_maps_url,
+        "business_formatted_address": scan.business.formatted_address,
         "overall_score": scan.overall_score,
         "status": scan.status,
         "summary": scan.summary,
@@ -405,6 +413,8 @@ def get_visibility_report_details(id: uuid.UUID, db: Session = Depends(get_db)):
             {
                 "id": str(r.id),
                 "provider": r.provider,
+                "model": r.model,
+                "display_name": r.display_name,
                 "status": r.status,
                 "score": r.score,
                 "rank_position": r.rank_position,
@@ -457,3 +467,16 @@ def delete_scan_result(id: uuid.UUID, db: Session = Depends(get_db)):
     if not success:
         raise HTTPException(status_code=404, detail="Scan result not found")
     return {"status": "deleted"}
+
+
+@router.post("/telemetry/engagement", response_model=EngagementEventRead)
+def log_engagement_event(data: EngagementEventCreate, db: Session = Depends(get_db)):
+    """Log user interactions, clicks, views, and sharing events for analytics."""
+    event = EngagementEvent(
+        event_type=data.event_type,
+        target=data.target
+    )
+    db.add(event)
+    db.commit()
+    db.refresh(event)
+    return event

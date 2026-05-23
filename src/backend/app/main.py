@@ -69,6 +69,7 @@ def seed_database():
                 config = ProviderConfig(
                     provider=provider,
                     model=defaults["model"],
+                    display_name=defaults.get("display_name"),
                     api_base=defaults["api_base"],
                     timeout_seconds=defaults["timeout"],
                     is_active=True

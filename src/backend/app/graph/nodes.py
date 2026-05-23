@@ -30,6 +30,7 @@ CRITICAL INSTRUCTIONS:
 1. Verify the Domain to determine the true operational Business Name, its core Industry category, and physical headquarters location.
 2. Determine if the business is purely virtual (SaaS, e-commerce, remote global platforms with no local foot-traffic storefront or regional service area radius). Set "is_virtual" to true or false.
 3. Extract an explicit array of exactly 2-4 core structural services/offerings from the website data and populate "default_services".
+4. If the business is NOT virtual ("is_virtual" is false), you MUST call the `lookup_google_maps_location` tool to search Google Maps and find its coordinates, address, and Google Maps URL. Populate the returned details into the final JSON output.
 
 PROMPT GENERATION DETERMINISTIC FORMULAS:
 You must generate exactly 3 highly realistic, conversational search prompts that real humans ask conversational AI engines (ChatGPT, Perplexity, Gemini). Do not wrap them in quote marks inside the array. Follow these mathematical blueprints strictly:
@@ -67,6 +68,10 @@ Return ONLY a valid raw JSON object matching the keys below. Do not include mark
   "radius_miles": 25,
   "default_services": ["service1", "service2"],
   "business_alias": "Alternative name or empty",
+  "latitude": 29.7604,
+  "longitude": -95.3698,
+  "formatted_address": "Street address, City, State, ZIP, Country",
+  "google_maps_url": "https://www.google.com/maps/search/?api=1...",
   "prompts": [
     "Insert Prompt Index 0 here",
     "Insert Prompt Index 1 here",
@@ -385,6 +390,10 @@ async def classify_business(state: ScanState) -> dict:
                 "default_services": services,
                 "domain_verified": data.get("domain_verified", False),
                 "is_virtual": is_virtual,
+                "latitude": data.get("latitude"),
+                "longitude": data.get("longitude"),
+                "google_maps_url": data.get("google_maps_url"),
+                "formatted_address": data.get("formatted_address"),
             },
             "prompts": final_prompts,
             "request": updated_req,
@@ -432,6 +441,10 @@ async def classify_business(state: ScanState) -> dict:
                 "default_services": fb_services,
                 "domain_verified": False,
                 "is_virtual": False,
+                "latitude": None,
+                "longitude": None,
+                "google_maps_url": None,
+                "formatted_address": None,
             },
             "prompts": fallback_prompts,
             "request": updated_req,
@@ -514,7 +527,7 @@ class AuditMetrics(BaseModel):
     client_mentioned: bool = Field(description="True if the target business or domain is explicitly recommended or discussed.")
     true_rank_position: Optional[int] = Field(default=None, description="The true numerical ranking order of the client in the recommendations (1-10). Null if not mentioned.")
     sentiment: str = Field(description="Must be 'positive', 'neutral', or 'negative' based on how the AI speaks about the client.")
-    competitors: List[str] = Field(default_factory=list, description="List of alternative business names recommended alongside or instead of the client.")
+    competitors: List[str] = Field(default_factory=list, description="List of alternative brand, competitor, or entity names (e.g. rival universities, competitor schools, competing businesses, or alternative companies) recommended alongside or instead of the client.")
     direct_link_provided: bool = Field(description="True if the AI provided a direct hyperlink back to the client's verified domain.")
     actionable_intent: bool = Field(description="True if the AI explicitly told the user how to contact, book, or visit the businesses.")
     reasoning: str = Field(description="A brief explanation of why the client did or did not secure a top-ranked recommendation.")
@@ -589,17 +602,16 @@ async def evaluate_ai_response(
     GEO insights without brittle string tracking patterns.
     """
     # ─── FAST LOCAL PRE-FLIGHT CHECK ───
-    # If the target business name or domain is not mentioned anywhere (case-insensitive)
-    # in the raw response, we can safely skip the LLM Judge pass and return a red zero result immediately.
-    if not is_brand_mentioned(raw_ai_response, business_name, domain):
+    # If the response is extremely short or blank, we skip
+    if not raw_ai_response or not raw_ai_response.strip() or len(raw_ai_response.strip()) < 20:
         return {
             "status": "red", "score": 0, "client_mentioned": False,
             "true_rank_position": None, "sentiment": "neutral",
             "competitors": [], "direct_link_provided": False,
-            "actionable_intent": False, "reasoning": "Target business name and domain are not mentioned in the generative response.",
+            "actionable_intent": False, "reasoning": "No text content in the generative response.",
             # Compatibility fallback keys
             "mentioned": False, "rank_position": None, "actionable": False,
-            "domain_match": False, "reason": "Target business name and domain are not mentioned in the generative response."
+            "domain_match": False, "reason": "No text content in the generative response."
         }
     judge_prompt = (
         "You are an elite Generative Engine Optimization (GEO) auditing judge. "
@@ -640,7 +652,7 @@ async def evaluate_ai_response(
             provider=provider,
             model=judge_model,
             messages=[{"role": "user", "content": judge_prompt}],
-            temperature=1.0 if "gemini" in judge_model else 0.0, # Deterministic metric analysis
+            temperature=1.0 if "gemini-3.1" in judge_model else 0.0, # Deterministic metric analysis
             response_format=AuditMetrics
         )
         
@@ -777,22 +789,25 @@ async def _query_single_prompt(
         )
         content = response.choices[0].message.content or ""
         logger.info(
-            "Provider '%s' | Prompt [%d/%d] → Raw response:\n%s",
-            provider_name_log, prompt_index + 1, total_prompts, content
+            "Provider '%s' | Prompt [%d/%d] → Raw response obtained.",
+            provider_name_log, prompt_index + 1, total_prompts
         )
-        parsed = await evaluate_ai_response(content, business_name, domain)
-        parsed["prompt"] = prompt
-        parsed["prompt_index"] = prompt_index
-        return parsed
+        return {
+            "prompt": prompt,
+            "prompt_index": prompt_index,
+            "raw_response": content,
+            "error": None
+        }
     except Exception as e:
         logger.warning(
             "Provider '%s' | Prompt [%d/%d] '%s' → FAILED: %s",
             provider_name_log, prompt_index + 1, total_prompts, prompt, str(e)
         )
         return {
-            "status": "red", "score": 0, "rank_position": None,
-            "mentioned": False, "actionable": False, "domain_match": False,
-            "reason": f"Prompt query failed: {e}", "prompt": prompt, "prompt_index": prompt_index,
+            "prompt": prompt,
+            "prompt_index": prompt_index,
+            "raw_response": "",
+            "error": str(e)
         }
 
 
@@ -805,10 +820,8 @@ async def query_single_provider(
     search_results: Optional[list[dict]] = None,
 ) -> ProviderResult:
     """
-    Query a single provider with all prompts in parallel.
-
-    Provider config is resolved ONCE synchronously before any tasks are created,
-    so the per-prompt coroutines call litellm directly with no further DB I/O.
+    Query a single provider with all prompts in parallel, aggregate responses,
+    and execute exactly ONE judge call to determine evaluation metrics.
     """
     provider_name = provider_cfg["name"]
 
@@ -817,7 +830,7 @@ async def query_single_provider(
 
     # ── Resolve provider config once (synchronous DB lookup, done before parallelism) ──
     if call_args is None:
-        call_args = ProviderService.resolve_provider_call_args(provider_name)
+        call_args = ProviderService.resolve_provider_call_args(provider_name, model=provider_cfg.get("model"))
     model = call_args.get("model", provider_name)
 
     logger.info(
@@ -833,7 +846,111 @@ async def query_single_provider(
             )
             for i, p in enumerate(prompts)
         ]
-        prompt_results = await asyncio.gather(*tasks)
+        raw_results = await asyncio.gather(*tasks)
+
+        # ─── AGGREGATE TEXT FROM ALL COMPLETED RESPONSES ───
+        aggregated_text = ""
+        for r in raw_results:
+            if r.get("error"):
+                continue
+            content = r.get("raw_response", "")
+            if content:
+                aggregated_text += f"=== PROMPT: {r['prompt']} ===\n{content}\n\n"
+
+        # ─── EXECUTE EXACTLY ONE JUDGE CALL ───
+        if aggregated_text.strip():
+            # One structured evaluation pass for all responses combined!
+            judge_metrics = await evaluate_ai_response(aggregated_text, business_name, domain)
+        else:
+            # Brand not mentioned anywhere in any response
+            judge_metrics = {
+                "status": "red",
+                "score": 0,
+                "client_mentioned": False,
+                "true_rank_position": None,
+                "sentiment": "neutral",
+                "competitors": [],
+                "direct_link_provided": False,
+                "actionable_intent": False,
+                "reasoning": "Target business name and domain are not mentioned in any of the generative search responses.",
+                "mentioned": False,
+                "rank_position": None,
+                "actionable": False,
+                "domain_match": False,
+                "reason": "Target business name and domain are not mentioned in any of the generative search responses."
+            }
+
+        # ─── MAP EVALUATIONS BACK TO PROMPT RESULTS ───
+        prompt_results = []
+        for r in raw_results:
+            p = r["prompt"]
+            p_idx = r["prompt_index"]
+            err = r.get("error")
+            content = r.get("raw_response", "")
+            
+            if err:
+                prompt_results.append({
+                    "status": "red",
+                    "score": 0,
+                    "rank_position": None,
+                    "mentioned": False,
+                    "actionable": False,
+                    "domain_match": False,
+                    "reason": f"Prompt query failed: {err}",
+                    "prompt": p,
+                    "prompt_index": p_idx,
+                    "raw_response": ""
+                })
+            else:
+                # Run the fast, free local mention check on this specific prompt response
+                has_mention = is_brand_mentioned(content, business_name, domain)
+                
+                if not has_mention:
+                    prompt_results.append({
+                        "status": "red",
+                        "score": 0,
+                        "rank_position": None,
+                        "mentioned": False,
+                        "actionable": False,
+                        "domain_match": False,
+                        "reason": "Target business name and domain are not mentioned in this response.",
+                        "competitors": judge_metrics.get("competitors", []),
+                        "prompt": p,
+                        "prompt_index": p_idx,
+                        "raw_response": content
+                    })
+                else:
+                    # Brand mentioned! Use the overall judge metrics to score this prompt response
+                    score = 0
+                    if judge_metrics.get("client_mentioned"):
+                        score += 50
+                        if judge_metrics.get("sentiment") == "positive":
+                            score += 10
+                        if judge_metrics.get("direct_link_provided"):
+                            score += 20
+                            
+                        # If mentioned in this specific prompt response, let's check rank
+                        rank = judge_metrics.get("true_rank_position")
+                        if rank and rank <= 3:
+                            score += 20
+                        elif rank and rank <= 5:
+                            score += 10
+                    
+                    status = "green" if score >= 80 else "yellow" if score >= 50 else "red"
+                    
+                    prompt_results.append({
+                        "status": status,
+                        "score": score,
+                        "rank_position": judge_metrics.get("true_rank_position"),
+                        "mentioned": True,
+                        "actionable": judge_metrics.get("actionable_intent", False),
+                        "domain_match": judge_metrics.get("direct_link_provided", False),
+                        "reason": judge_metrics.get("reasoning", ""),
+                        "competitors": judge_metrics.get("competitors", []),
+                        "prompt": p,
+                        "prompt_index": p_idx,
+                        "raw_response": content
+                    })
 
         best = max(prompt_results, key=lambda r: r["score"])
         errors = [r["reason"] for r in prompt_results if r["score"] == 0 and "failed" in r.get("reason", "").lower()]
@@ -841,7 +958,7 @@ async def query_single_provider(
         mention_count = sum(1 for r in prompt_results if r["mentioned"])
 
         logger.info(
-            "Provider '%s' aggregated across %d prompts: Best Score=%d, Status='%s', "
+            "Provider '%s' aggregated across %d prompts with ONE judge call: Best Score=%d, Status='%s', "
             "Mentions=%d/%d, BestPrompt='%s', Reason='%s'",
             provider_name, len(prompts),
             best["score"], best["status"],
@@ -852,6 +969,7 @@ async def query_single_provider(
         return ProviderResult(
             provider=provider_name,
             model=model,
+            display_name=provider_cfg.get("display_name"),
             status=best["status"],
             score=best["score"],
             rank_position=best["rank_position"],
@@ -868,6 +986,7 @@ async def query_single_provider(
         return ProviderResult(
             provider=provider_name,
             model=model,
+            display_name=provider_cfg.get("display_name"),
             status="red",
             score=0,
             mentioned=False,
@@ -888,7 +1007,7 @@ async def query_providers(state: ScanState) -> dict:
     try:
         active_configs = ProviderService.get_active_configs(db)
         providers_to_query = [
-            {"name": c.provider, "model": c.model}
+            {"name": c.provider, "model": c.model, "display_name": c.display_name}
             for c in active_configs
             if c.provider != "gemini_grounding"
         ]
