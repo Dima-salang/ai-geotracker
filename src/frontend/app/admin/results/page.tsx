@@ -9,6 +9,7 @@ interface ScanResult {
   scan_id: string;
   provider: string;
   model: string | null;
+  display_name: string | null;
   status: string;
   score: number | null;
   rank_position: number | null;
@@ -272,13 +273,13 @@ export default function ResultCRUD() {
           {/* Filters & Search */}
           <div className="border border-foreground/10 bg-background p-4 mb-6 flex flex-col md:flex-row gap-4 items-center justify-between">
             <div className="w-full md:w-1/2">
-              <label className="font-mono text-[10px] text-text-muted uppercase block mb-1 font-bold">Filter By AI Provider</label>
+              <label className="font-mono text-[10px] text-text-muted uppercase block mb-1 font-bold">Filter By AI Search Model</label>
               <select
                 value={filterProvider}
                 onChange={(e) => { setFilterProvider(e.target.value); setOffset(0); }}
                 className="w-full bg-background border border-foreground/20 focus:border-primary focus:outline-none font-mono text-xs px-3 py-2 text-foreground"
               >
-                <option value="">All Providers</option>
+                <option value="">All AI Models</option>
                 <option value="gemini">Google Gemini</option>
                 <option value="perplexity">Perplexity AI</option>
                 <option value="groq">Groq (Llama)</option>
@@ -344,8 +345,8 @@ export default function ResultCRUD() {
                         <tr className="border-b border-foreground/5 hover:bg-surface-container-lowest">
                           <td className="p-4 font-mono text-foreground/60">{r.id.slice(0, 8)}...</td>
                           <td className="p-4 font-bold text-foreground uppercase">
-                            {r.provider}
-                            {r.model && (
+                            {r.display_name || r.provider}
+                            {r.model && !r.display_name && (
                               <span className="block font-mono text-[9px] text-text-muted lowercase tracking-tighter normal-case font-medium mt-1 select-all bg-foreground/5 px-1.5 py-0.5 rounded border border-foreground/5 max-w-[140px] truncate">
                                 {r.model.replace(/^openrouter\//, "").replace(/^openrouter_/, "")}
                               </span>
@@ -402,7 +403,7 @@ export default function ResultCRUD() {
                             <td colSpan={7} className="p-6">
                               <div className="border border-foreground/10 bg-background p-6 space-y-4">
                                 <span className="font-mono text-[10px] text-primary uppercase font-bold tracking-widest block mb-2">
-                                  ◆ Parsed Simulated Prompt Outcomes ({parsedPrompts.length} scenarios)
+                                  ◆ Parsed Prompt Outcomes ({parsedPrompts.length} scenarios)
                                 </span>
                                 
                                 {parsedPrompts.length > 0 ? (
@@ -562,11 +563,9 @@ export default function ResultCRUD() {
                       <span className="text-foreground uppercase font-bold block">{formProvider}</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-text-muted uppercase font-bold block mb-0.5">Dynamic Model</span>
-                      <span className="text-foreground lowercase font-medium select-all block truncate max-w-full" title={editingResult?.model || "N/A"}>
-                        {editingResult?.model
-                          ? editingResult.model.replace(/^openrouter\//, "").replace(/^openrouter_/, "")
-                          : "N/A"}
+                      <span className="text-[10px] text-text-muted uppercase font-bold block mb-0.5">AI Search Model</span>
+                      <span className="text-foreground uppercase font-bold block truncate max-w-full" title={editingResult?.display_name || "N/A"}>
+                        {editingResult?.display_name || editingResult?.provider || "N/A"}
                       </span>
                     </div>
                   </div>

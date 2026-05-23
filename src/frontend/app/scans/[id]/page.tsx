@@ -67,10 +67,10 @@ export default function ScanReportPage({ params }: ScanReportPageProps) {
           {loading ? (
             <div className="w-full border border-foreground/10 bg-background p-24 text-center shadow-md">
               <span className="font-mono text-xs tracking-widest text-primary animate-pulse uppercase font-bold block mb-4">
-                ◆ RETRIEVING VISIBILITY CARD FROM DATABASE...
+                ◆ RETRIEVING VISIBILITY SCORE FROM DATABASE...
               </span>
               <p className="font-sans text-xs text-text-muted">
-                Connecting to global AEO indexing registries. Please wait.
+                Connecting to AI Search database. Please wait.
               </p>
             </div>
           ) : errorMsg ? (
@@ -97,7 +97,7 @@ export default function ScanReportPage({ params }: ScanReportPageProps) {
                   </h2>
                 </div>
                 <span className="font-mono text-[10px] text-text-muted mb-1 uppercase tracking-widest">
-                  RECORDED_NODE: {scanData.id.slice(0, 8)}
+                  AUDIT_RECORD: {scanData.id.slice(0, 8)}
                 </span>
               </div>
 

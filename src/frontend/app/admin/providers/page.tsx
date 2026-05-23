@@ -7,6 +7,7 @@ interface ProviderConfig {
   id: string;
   provider: string;
   model: string;
+  display_name: string | null;
   api_base: string | null;
   is_active: boolean;
   timeout_seconds: number;
@@ -42,6 +43,7 @@ export default function AdminProviders() {
   // State for the Create Platform form
   const [newProvider, setNewProvider] = useState("");
   const [newModel, setNewModel] = useState("");
+  const [newDisplayName, setNewDisplayName] = useState("");
   const [newApiBase, setNewApiBase] = useState("");
   const [newTimeout, setNewTimeout] = useState(15);
   const [newApiKey, setNewApiKey] = useState("");
@@ -93,6 +95,7 @@ export default function AdminProviders() {
         body: JSON.stringify({
           provider: newProvider.trim().toLowerCase(),
           model: newModel.trim(),
+          display_name: newDisplayName.trim() || null,
           api_base: newApiBase.trim() || null,
           is_active: newIsActive,
           timeout_seconds: Number(newTimeout),
@@ -110,6 +113,7 @@ export default function AdminProviders() {
       // Reset form fields
       setNewProvider("");
       setNewModel("");
+      setNewDisplayName("");
       setNewApiBase("");
       setNewTimeout(15);
       setNewApiKey("");
@@ -243,6 +247,7 @@ export default function AdminProviders() {
           id: config.id,
           provider: config.provider,
           model: config.model,
+          display_name: config.display_name || null,
           api_base: config.api_base || null,
           is_active: config.is_active,
           timeout_seconds: Number(config.timeout_seconds),
@@ -259,9 +264,17 @@ export default function AdminProviders() {
       addLog(`[SUCCESS] SYNC: Platform [${config.provider.toUpperCase()} (${config.model})] successfully saved.`);
       addLog(`SYNC: Model = "${updated.model}", Active = ${updated.is_active ? "TRUE" : "FALSE"}, Key Saved = ${updated.has_key ? "YES" : "NO"}`);
 
-      // Update has_key state and reset API key field to "__NO_CHANGE__" if needed
+      // Update config fields including display name and has_key state
       setConfigs((prev) =>
-        prev.map((c) => (c.id === id ? { ...c, has_key: updated.has_key } : c))
+        prev.map((c) => (c.id === id ? { 
+          ...c, 
+          display_name: updated.display_name,
+          model: updated.model,
+          api_base: updated.api_base,
+          is_active: updated.is_active,
+          timeout_seconds: updated.timeout_seconds,
+          has_key: updated.has_key 
+        } : c))
       );
       if (updated.has_key) {
         setApiKeys((prev) => ({ ...prev, [id]: "__NO_CHANGE__" }));
@@ -412,10 +425,8 @@ export default function AdminProviders() {
               >
                 [+ ADD CUSTOM ENGINE]
               </button>
-            </div>
           </div>
         </div>
-
 
         {loading ? (
           <div className="w-full border border-foreground/10 bg-background p-12 text-center my-8">
@@ -423,8 +434,10 @@ export default function AdminProviders() {
               ● SYNCHRONIZING WITH DATABASE SCHEMA...
             </span>
           </div>
-        ) : errorMsg ? (
-          <div className="w-full border border-rose-600/30 bg-rose-600/5 my-8 flex flex-col md:flex-row items-center justify-between gap-4 px-8 py-6">
+        ) : (
+          <>
+            {errorMsg && (
+              <div className="w-full border border-rose-600/30 bg-rose-600/5 my-8 flex flex-col md:flex-row items-center justify-between gap-4 px-8 py-6">
             <div className="flex items-start gap-3">
               <span className="font-mono text-[10px] bg-rose-600 text-white px-2 py-0.5 uppercase font-bold tracking-tighter shrink-0 mt-0.5">
                 SYNC ERROR
@@ -439,228 +452,158 @@ export default function AdminProviders() {
             >
               Retry Sync
             </button>
-          </div>
-
-        ) : (
-          <div className="space-y-8 mb-12">
-            {/* Dedicated External Search Integrations Section */}
-            <div className="border border-primary/20 bg-background/80 backdrop-blur-sm p-6 md:p-8 hover:border-primary/45 transition-all duration-300 relative overflow-hidden">
-              {/* Micro-glow effect */}
-              <div className="absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full blur-3xl -z-10"></div>
-
-              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 border-b border-foreground/10 pb-6 mb-6">
+            </div>
+            )}
+              {/* ═══════════════════════ SYSTEM CONFIGURATIONS BENTO GRID ═══════════════════════ */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              
+              {/* Card 1: External Search Integrations */}
+              <div className="border border-primary/20 bg-background/80 backdrop-blur-sm p-6 hover:border-primary/45 transition-all duration-300 relative overflow-hidden flex flex-col justify-between">
                 <div>
-                  <div className="flex items-center gap-3 mb-2">
-                    <span className="font-mono text-[10px] bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 uppercase font-bold tracking-tighter animate-pulse">
+                  <div className="flex flex-wrap items-center gap-2 mb-4">
+                    <span className="font-mono text-[9px] bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 uppercase font-bold tracking-tighter">
                       SYSTEM INTEGRATION
                     </span>
-                    <span className="font-mono text-[10px] bg-foreground text-background px-2 py-0.5 uppercase font-bold tracking-tighter">
-                      GLOBAL SEARCH INDEX
+                    <span className="font-mono text-[9px] bg-foreground text-background px-2 py-0.5 uppercase font-bold tracking-tighter">
+                      SEARCH INDEX
                     </span>
                   </div>
-                  <h2 className="font-display text-2xl font-bold uppercase tracking-tight text-foreground">
-                    External Search Integrations
+                  <h2 className="font-display text-lg font-bold uppercase tracking-tight text-foreground mb-2">
+                    Search Integrations
                   </h2>
-                  <p className="font-sans text-xs text-text-muted mt-2 max-w-2xl leading-relaxed">
-                    Configure third-party API indexes that allow our autonomous agents to gather real-time web search grounding and brand citation signals.
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                <div className="md:col-span-2 space-y-4">
-                  <h3 className="font-mono text-xs font-bold text-foreground uppercase tracking-wider">
-                    Google Serper Dev Integration
-                  </h3>
-                  <p className="font-sans text-xs text-text-muted leading-relaxed">
-                    Used by parallel LLM audits to query Google Search index pages. If not configured, agents will fall back to DuckDuckGo parsing, which is slower and rate-limited.
+                  <p className="font-sans text-xs text-text-muted leading-relaxed mb-4">
+                    Configure Google Serper API credentials. If not configured, parallel audits fall back to DuckDuckGo (slower).
                   </p>
 
-                  <div className="pt-2">
-                    <label className="font-mono text-[10px] text-text-muted uppercase block mb-1.5 font-bold tracking-wider">
+                  <div className="space-y-1.5 mb-6">
+                    <label className="font-mono text-[9px] text-text-muted uppercase block font-bold tracking-wider">
                       Serper Dev API Key
                     </label>
-                    <div className="relative max-w-xl">
+                    <div className="relative">
                       <input
                         type="password"
                         value={systemKeys["serper_api_key"] || ""}
                         onChange={(e) => setSystemKeys(prev => ({ ...prev, serper_api_key: e.target.value }))}
-                        className="w-full bg-transparent border-b border-foreground/20 focus:border-primary focus:outline-none font-mono text-xs py-2 pr-20 text-foreground"
-                        placeholder={systemConfigs.find(c => c.key === "serper_api_key")?.has_value ? "••••••••••••••••" : "Configure Serper API Key"}
+                        className="w-full bg-transparent border-b border-foreground/20 focus:border-primary focus:outline-none font-mono text-xs py-1.5 pr-20 text-foreground"
+                        placeholder={systemConfigs.find(c => c.key === "serper_api_key")?.has_value ? "••••••••••••••••" : "Configure Serper Key"}
                       />
                       {systemConfigs.find(c => c.key === "serper_api_key")?.has_value && systemKeys["serper_api_key"] === "__NO_CHANGE__" && (
-                        <span className="absolute right-0 top-2 font-mono text-[8px] bg-primary/10 text-primary border border-primary/20 px-1 py-0.5 uppercase font-bold tracking-tighter">
-                          SECURED (FERNET)
+                        <span className="absolute right-0 top-1.5 font-mono text-[7px] bg-primary/10 text-primary border border-primary/20 px-1 py-0.5 uppercase font-bold tracking-tighter">
+                          SECURED
                         </span>
                       )}
                     </div>
                   </div>
                 </div>
 
-                <div className="flex flex-col justify-end items-end md:border-l md:border-foreground/10 md:pl-8">
-                  <button
-                    onClick={() => handleSaveSystemConfig("serper_api_key")}
-                    disabled={savingSystemStates["serper_api_key"]}
-                    className="w-full md:w-auto font-mono text-xs tracking-tighter bg-primary text-white px-8 py-3.5 hover:bg-primary-hover disabled:bg-primary/50 transition-all uppercase font-bold flex items-center justify-center gap-2"
-                  >
-                    {savingSystemStates["serper_api_key"] ? (
-                      <>
-                        <span className="inline-block w-2 h-2 bg-white animate-ping"></span>
-                        SYNCHRONIZING...
-                      </>
-                    ) : (
-                      "SAVE_SEARCH_CREDENTIALS"
-                    )}
-                  </button>
-                </div>
+                <button
+                  onClick={() => handleSaveSystemConfig("serper_api_key")}
+                  disabled={savingSystemStates["serper_api_key"]}
+                  className="w-full font-mono text-xs tracking-tighter bg-primary text-white py-3 hover:bg-primary-hover disabled:bg-primary/50 transition-all uppercase font-bold flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  {savingSystemStates["serper_api_key"] ? "SYNCHRONIZING..." : "SAVE_SEARCH_CREDENTIALS"}
+                </button>
               </div>
-            </div>
 
-            {/* Dedicated GEO Auditing Judge Integration Section */}
-            <div className="border border-primary/20 bg-background/80 backdrop-blur-sm p-6 md:p-8 hover:border-primary/45 transition-all duration-300 relative overflow-hidden">
-              {/* Micro-glow effect */}
-              <div className="absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full blur-3xl -z-10"></div>
-
-              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 border-b border-foreground/10 pb-6 mb-6">
+              {/* Card 2: GEO Auditing Judge Configuration */}
+              <div className="border border-primary/20 bg-background/80 backdrop-blur-sm p-6 hover:border-primary/45 transition-all duration-300 relative overflow-hidden flex flex-col justify-between">
                 <div>
-                  <div className="flex items-center gap-3 mb-2">
-                    <span className="font-mono text-[10px] bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 uppercase font-bold tracking-tighter animate-pulse">
-                      SYSTEM CONFIGURATION
+                  <div className="flex flex-wrap items-center gap-2 mb-4">
+                    <span className="font-mono text-[9px] bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 uppercase font-bold tracking-tighter">
+                      SYSTEM CONFIG
                     </span>
-                    <span className="font-mono text-[10px] bg-foreground text-background px-2 py-0.5 uppercase font-bold tracking-tighter">
-                      GEO AUDITING JUDGE
+                    <span className="font-mono text-[9px] bg-foreground text-background px-2 py-0.5 uppercase font-bold tracking-tighter">
+                      GEO JUDGE
                     </span>
                   </div>
-                  <h2 className="font-display text-2xl font-bold uppercase tracking-tight text-foreground">
-                    GEO Auditing Judge Configuration
+                  <h2 className="font-display text-lg font-bold uppercase tracking-tight text-foreground mb-2">
+                    GEO Auditing Judge
                   </h2>
-                  <p className="font-sans text-xs text-text-muted mt-2 max-w-2xl leading-relaxed">
-                    Specify the LLM model to be used as the elite Generative Engine Optimization (GEO) judge for auditing and scoring AI search recommendations.
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                <div className="md:col-span-2 space-y-4">
-                  <h3 className="font-mono text-xs font-bold text-foreground uppercase tracking-wider">
-                    Auditing Judge Model Selection
-                  </h3>
-                  <p className="font-sans text-xs text-text-muted leading-relaxed">
-                    The judge leverages a structured LLM pass to extract advanced GEO metrics. By default, this uses <code className="text-primary font-mono text-[11px]">gemini/gemini-2.0-flash</code> for ultra-fast, structured execution. You can configure any active model format (e.g. <code className="text-primary font-mono text-[11px]">provider/model-name</code>).
+                  <p className="font-sans text-xs text-text-muted leading-relaxed mb-4">
+                    Specify the model used as the Generative Engine Optimization (GEO) judge. Default is <code className="text-primary font-mono text-[10px]">gemini/gemini-2.0-flash</code>.
                   </p>
 
-                  <div className="pt-2">
-                    <label className="font-mono text-[10px] text-text-muted uppercase block mb-1.5 font-bold tracking-wider">
+                  <div className="space-y-1.5 mb-6">
+                    <label className="font-mono text-[9px] text-text-muted uppercase block font-bold tracking-wider">
                       Judge Model Identifier
                     </label>
-                    <div className="relative max-w-xl">
-                      <input
-                        type="text"
-                        value={systemKeys["judge_model"] || ""}
-                        onChange={(e) => setSystemKeys(prev => ({ ...prev, judge_model: e.target.value }))}
-                        className="w-full bg-transparent border-b border-foreground/20 focus:border-primary focus:outline-none font-mono text-xs py-2 text-foreground font-bold"
-                        placeholder="e.g. gemini/gemini-2.0-flash"
-                      />
-                    </div>
+                    <input
+                      type="text"
+                      value={systemKeys["judge_model"] || ""}
+                      onChange={(e) => setSystemKeys(prev => ({ ...prev, judge_model: e.target.value }))}
+                      className="w-full bg-transparent border-b border-foreground/20 focus:border-primary focus:outline-none font-mono text-xs py-1.5 text-foreground font-bold"
+                      placeholder="e.g. gemini/gemini-2.0-flash"
+                    />
                   </div>
                 </div>
 
-                <div className="flex flex-col justify-end items-end md:border-l md:border-foreground/10 md:pl-8">
-                  <button
-                    onClick={() => handleSaveSystemConfig("judge_model")}
-                    disabled={savingSystemStates["judge_model"]}
-                    className="w-full md:w-auto font-mono text-xs tracking-tighter bg-primary text-white px-8 py-3.5 hover:bg-primary-hover disabled:bg-primary/50 transition-all uppercase font-bold flex items-center justify-center gap-2"
-                  >
-                    {savingSystemStates["judge_model"] ? (
-                      <>
-                        <span className="inline-block w-2 h-2 bg-white animate-ping"></span>
-                        SYNCHRONIZING...
-                      </>
-                    ) : (
-                      "SAVE_JUDGE_CONFIG"
-                    )}
-                  </button>
-                </div>
+                <button
+                  onClick={() => handleSaveSystemConfig("judge_model")}
+                  disabled={savingSystemStates["judge_model"]}
+                  className="w-full font-mono text-xs tracking-tighter bg-primary text-white py-3 hover:bg-primary-hover disabled:bg-primary/50 transition-all uppercase font-bold flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  {savingSystemStates["judge_model"] ? "SYNCHRONIZING..." : "SAVE_JUDGE_CONFIG"}
+                </button>
               </div>
-              {/* Dedicated Parallel Search Grounding Toggle */}
-              <div className="border border-primary/20 bg-background/80 backdrop-blur-sm p-6 md:p-8 hover:border-primary/45 transition-all duration-300 relative overflow-hidden">
-                {/* Micro-glow effect */}
-                <div className="absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full blur-3xl -z-10"></div>
 
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 border-b border-foreground/10 pb-6 mb-6">
-                  <div>
-                    <div className="flex items-center gap-3 mb-2">
-                      <span className="font-mono text-[10px] bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 uppercase font-bold tracking-tighter animate-pulse">
-                        SYSTEM CONFIGURATION
-                      </span>
-                      <span className="font-mono text-[10px] bg-foreground text-background px-2 py-0.5 uppercase font-bold tracking-tighter">
-                        PARALLEL SEARCH GROUNDING
-                      </span>
-                    </div>
-                    <h2 className="font-display text-2xl font-bold uppercase tracking-tight text-foreground">
-                      Parallel Search Grounding
-                    </h2>
-                    <p className="font-sans text-xs text-text-muted mt-2 max-w-2xl leading-relaxed">
-                      Toggle whether real-time web search grounding context is dynamically injected into parallel multi-engine completion prompts.
-                    </p>
+              {/* Card 3: Parallel Search Grounding */}
+              <div className="border border-primary/20 bg-background/80 backdrop-blur-sm p-6 hover:border-primary/45 transition-all duration-300 relative overflow-hidden flex flex-col justify-between">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2 mb-4">
+                    <span className="font-mono text-[9px] bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 uppercase font-bold tracking-tighter">
+                      SYSTEM CONFIG
+                    </span>
+                    <span className="font-mono text-[9px] bg-foreground text-background px-2 py-0.5 uppercase font-bold tracking-tighter">
+                      GROUNDING
+                    </span>
                   </div>
-                </div>
+                  <h2 className="font-display text-lg font-bold uppercase tracking-tight text-foreground mb-2">
+                    Search Grounding
+                  </h2>
+                  <p className="font-sans text-xs text-text-muted leading-relaxed mb-4">
+                    Toggle whether web search grounding context is injected into completion prompts. If disabled, it runs in simulation mode.
+                  </p>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                  <div className="md:col-span-2 space-y-4">
-                    <h3 className="font-mono text-xs font-bold text-foreground uppercase tracking-wider">
-                      Grounding Integration Toggle
-                    </h3>
-                    <p className="font-sans text-xs text-text-muted leading-relaxed">
-                      When enabled, search results from Serper/DuckDuckGo are passed directly to our parallel auditing agents to provide real grounded context. When disabled, they execute search simulations instead.
-                    </p>
-
-                    <div className="pt-2 flex items-center gap-4">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const currentVal = systemKeys["enable_search_grounding"] || "true";
-                          const newVal = currentVal.trim().toLowerCase() === "true" ? "false" : "true";
-                          setSystemKeys(prev => ({ ...prev, enable_search_grounding: newVal }));
-                        }}
-                        className={`font-mono text-xs font-bold px-4 py-2 border transition-all uppercase ${(systemKeys["enable_search_grounding"] || "true").trim().toLowerCase() === "true"
-                            ? "bg-emerald-600 border-emerald-600 text-white"
-                            : "bg-transparent border-foreground/20 text-text-muted hover:border-foreground"
-                          }`}
-                      >
-                        {(systemKeys["enable_search_grounding"] || "true").trim().toLowerCase() === "true" ? "GROUNDING ENABLED" : "GROUNDING DISABLED (SIMULATION MODE)"}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col justify-end items-end md:border-l md:border-foreground/10 md:pl-8">
+                  <div className="space-y-1.5 mb-6">
+                    <label className="font-mono text-[9px] text-text-muted uppercase block font-bold tracking-wider mb-1">
+                      Grounding Status
+                    </label>
                     <button
-                      onClick={() => handleSaveSystemConfig("enable_search_grounding")}
-                      disabled={savingSystemStates["enable_search_grounding"]}
-                      className="w-full md:w-auto font-mono text-xs tracking-tighter bg-primary text-white px-8 py-3.5 hover:bg-primary-hover disabled:bg-primary/50 transition-all uppercase font-bold flex items-center justify-center gap-2"
+                      type="button"
+                      onClick={() => {
+                        const currentVal = systemKeys["enable_search_grounding"] || "true";
+                        const newVal = currentVal.trim().toLowerCase() === "true" ? "false" : "true";
+                        setSystemKeys(prev => ({ ...prev, enable_search_grounding: newVal }));
+                      }}
+                      className={`w-full font-mono text-[10px] font-bold py-1.5 border transition-all uppercase ${(systemKeys["enable_search_grounding"] || "true").trim().toLowerCase() === "true"
+                          ? "bg-emerald-600 border-emerald-600 text-white"
+                          : "bg-transparent border-foreground/20 text-text-muted hover:border-foreground"
+                        }`}
                     >
-                      {savingSystemStates["enable_search_grounding"] ? (
-                        <>
-                          <span className="inline-block w-2 h-2 bg-white animate-ping"></span>
-                          SYNCHRONIZING...
-                        </>
-                      ) : (
-                        "SAVE_GROUNDING_TOGGLE"
-                      )}
+                      {(systemKeys["enable_search_grounding"] || "true").trim().toLowerCase() === "true" ? "ENABLED (REAL-TIME)" : "DISABLED (OFFLINE)"}
                     </button>
                   </div>
                 </div>
-              </div>
 
-              {/* Title separator for AI engines */}
-              <div className="pt-4 border-t border-foreground/10">
-                <span className="font-mono text-xs text-primary mb-2 uppercase tracking-[0.2em] block">
-                  PARALLEL MULTI-ENGINE COMPLETIONS
-                </span>
-                <h2 className="font-display text-2xl font-bold uppercase tracking-tight text-foreground">
-                  LLM Provider Registries
-                </h2>
+                <button
+                  onClick={() => handleSaveSystemConfig("enable_search_grounding")}
+                  disabled={savingSystemStates["enable_search_grounding"]}
+                  className="w-full font-mono text-xs tracking-tighter bg-primary text-white py-3 hover:bg-primary-hover disabled:bg-primary/50 transition-all uppercase font-bold flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  {savingSystemStates["enable_search_grounding"] ? "SYNCHRONIZING..." : "SAVE_GROUNDING_TOGGLE"}
+                </button>
               </div>
+            </div>
+
+            {/* Title separator for AI engines */}
+            <div className="pt-4 border-t border-foreground/10 mt-12">
+              <span className="font-mono text-xs text-primary mb-2 uppercase tracking-[0.2em] block">
+                PARALLEL MULTI-ENGINE COMPLETIONS
+              </span>
+              <h2 className="font-display text-2xl font-bold uppercase tracking-tight text-foreground mb-6">
+                LLM Provider Registries
+              </h2>
+            </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 {configs.map((config) => {
@@ -684,7 +627,7 @@ export default function AdminProviders() {
                             <span className={`w-2.5 h-2.5 ${config.is_active ? "bg-emerald-600" : "bg-foreground/20"}`}></span>
                           </div>
                           <h3 className="font-display text-[1.6rem] font-bold uppercase tracking-tight text-foreground">
-                            {details.title}
+                            {config.display_name || details.title}
                           </h3>
                           <p className="font-sans text-xs text-text-muted leading-relaxed mt-2">
                             {details.desc}
@@ -705,6 +648,20 @@ export default function AdminProviders() {
 
                       {/* Configuration Form */}
                       <div className="p-6 md:p-8 space-y-5 flex-grow">
+                        {/* Display Name */}
+                        <div>
+                          <label className="font-mono text-[10px] text-text-muted uppercase block mb-1.5 font-bold tracking-wider">
+                            Display Name / Label
+                          </label>
+                          <input
+                            type="text"
+                            value={config.display_name || ""}
+                            onChange={(e) => handleFieldChange(config.id, "display_name", e.target.value)}
+                            className="w-full bg-transparent border-b border-foreground/20 focus:border-[#FF5500] focus:outline-none font-mono text-xs py-2 text-foreground font-bold"
+                            placeholder="e.g. Google Gemini 1.5 Pro"
+                          />
+                        </div>
+
                         {/* AI Brain Version */}
                         <div>
                           <label className="font-mono text-[10px] text-text-muted uppercase block mb-1.5 font-bold tracking-wider">
@@ -714,7 +671,7 @@ export default function AdminProviders() {
                             type="text"
                             value={config.model}
                             onChange={(e) => handleFieldChange(config.id, "model", e.target.value)}
-                            className="w-full bg-transparent border-b border-foreground/20 focus:border-primary focus:outline-none font-mono text-xs py-2 text-foreground"
+                            className="w-full bg-transparent border-b border-foreground/20 focus:border-primary focus:outline-none font-mono text-xs py-2 text-zinc-600 font-mono"
                             placeholder="e.g. provider/model-name"
                           />
                         </div>
@@ -898,6 +855,20 @@ export default function AdminProviders() {
                         </div>
                       </div>
 
+                      {/* Display Name */}
+                      <div>
+                        <label className="font-mono text-[10px] text-text-muted uppercase block mb-1.5 font-bold tracking-wider">
+                          Display Name / Friendly Label
+                        </label>
+                        <input
+                          type="text"
+                          value={newDisplayName}
+                          onChange={(e) => setNewDisplayName(e.target.value)}
+                          className="w-full bg-transparent border-b border-foreground/20 focus:border-primary focus:outline-none font-mono text-xs py-2 text-foreground font-bold"
+                          placeholder="e.g. Google Gemini 1.5 Pro"
+                        />
+                      </div>
+
                       {/* Connection Endpoint */}
                       <div>
                         <label className="font-mono text-[10px] text-text-muted uppercase block mb-1.5 font-bold tracking-wider">
@@ -970,12 +941,9 @@ export default function AdminProviders() {
                   </div>
                 )}
               </div>
-            </div>
-          </div>
-        )
-        }
-
-
+            </>
+          )}
+        </div>
         {/* ═══════════════════════ CONSOLE TERMINAL PANEL ═══════════════════════ */}
         <section className="w-full border-t border-foreground/10 bg-foreground text-background py-6 px-6 md:px-10">
           <div className="max-w-7xl mx-auto">
@@ -1026,7 +994,6 @@ export default function AdminProviders() {
             ©2024 GeoTracker Admin
           </div>
         </footer>
-
       </main>
     </>
   );

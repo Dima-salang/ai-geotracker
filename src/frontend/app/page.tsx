@@ -153,9 +153,288 @@ export default function LandingPage() {
     }
   }, [showDashboard]);
 
+  const handleToggleMockPreview = () => {
+    if (showDashboard) {
+      setShowDashboard(false);
+      setScanResult(null);
+      setLiveDetails(null);
+      setResearchedCategory("");
+      setFootprintRadius(null);
+      setPromptsGenerated(null);
+      addLog("PREVIEW: UI preview mode deactivated.");
+      return;
+    }
+
+    addLog("PREVIEW: Activating high-fidelity Results Dashboard preview...");
+    setShowDashboard(true);
+    setResearchedCategory("Modern Dentistry & Orthodontics");
+    setFootprintRadius(25);
+    setPromptsGenerated(3);
+    
+    setLiveDetails({
+      business_name: "Urban Smiles Dentistry",
+      domain: "urbansmiles.com",
+      industry: "Modern Dentistry & Orthodontics",
+      primary_city: "Houston",
+      primary_state: "Texas",
+      country: "US",
+      service_focuses: ["Invisalign Aligners", "Cosmetic Crowns", "Teeth Whitening"],
+      is_virtual: false,
+    });
+
+    const mockProviderResults: ProviderResult[] = [
+      {
+        provider: "gemini",
+        model: "gemini-3.1-flash",
+        display_name: "Google Gemini (Grounding)",
+        status: "green",
+        score: 90,
+        rank_position: 1,
+        mentioned: true,
+        actionable: true,
+        domain_match: true,
+        reason: "Urban Smiles Dentistry is strongly recommended as the top-ranked local dentist clinic in Houston.",
+        prompt_results: [
+          {
+            prompt: "Best dentist in Houston for Invisalign",
+            prompt_index: 0,
+            mentioned: true,
+            rank_position: 1,
+            domain_match: true,
+            actionable: true,
+            status: "green",
+            score: 90,
+            reason: "Ranked #1 with a direct link and strong positive sentiment.",
+            raw_response: "Urban Smiles Dentistry (https://urbansmiles.com) is the highest rated Invisalign dentist in Houston. They have a state-of-the-art clinic and specialize in clear aligners. Book directly at their site."
+          },
+          {
+            prompt: "Top cosmetic dental clinics near Houston Texas",
+            prompt_index: 1,
+            mentioned: true,
+            rank_position: 2,
+            domain_match: true,
+            actionable: true,
+            status: "green",
+            score: 80,
+            reason: "Ranked #2 with domain match and clear actionable contacts.",
+            raw_response: "1. Houston Dental Care\n2. Urban Smiles Dentistry (https://urbansmiles.com) - Highly recommended for cosmetic dental work.\n3. Dental Crown Houston"
+          },
+          {
+            prompt: "Where to get teeth whitening in Houston",
+            prompt_index: 2,
+            mentioned: true,
+            rank_position: 3,
+            domain_match: true,
+            actionable: true,
+            status: "green",
+            score: 80,
+            reason: "Ranked #3 with direct website recommendation.",
+            raw_response: "We recommend visiting Urban Smiles Dentistry (urbansmiles.com) for their custom zoom whitening packages in Houston."
+          }
+        ]
+      },
+      {
+        provider: "gemini",
+        model: "gemma-2-9b",
+        display_name: "Google Gemma (AI Search)",
+        status: "yellow",
+        score: 60,
+        rank_position: 4,
+        mentioned: true,
+        actionable: false,
+        domain_match: false,
+        reason: "Mentioned as an alternative option, but is ranked #4 and missing verified contact links.",
+        prompt_results: [
+          {
+            prompt: "Best dentist in Houston for Invisalign",
+            prompt_index: 0,
+            mentioned: true,
+            rank_position: 4,
+            domain_match: false,
+            actionable: false,
+            status: "yellow",
+            score: 60,
+            reason: "Cited at rank #4 with neutral sentiment and missing direct URLs.",
+            raw_response: "Other dentists offering clear aligners in Houston include Urban Smiles Dentistry, although their website was not verified in this search pass."
+          },
+          {
+            prompt: "Top cosmetic dental clinics near Houston Texas",
+            prompt_index: 1,
+            mentioned: false,
+            rank_position: null,
+            domain_match: false,
+            actionable: false,
+            status: "red",
+            score: 0,
+            reason: "Not cited in the top cosmetic recommendations.",
+            raw_response: "For cosmetic work, we recommend: Houston Dental Care, Katy Orthodontics, and Sugar Land Dentistry."
+          },
+          {
+            prompt: "Where to get teeth whitening in Houston",
+            prompt_index: 2,
+            mentioned: true,
+            rank_position: 5,
+            domain_match: false,
+            actionable: false,
+            status: "yellow",
+            score: 50,
+            reason: "Mentioned at the end of the text list.",
+            raw_response: "You could also look into Urban Smiles Dentistry for whitening options."
+          }
+        ]
+      },
+      {
+        provider: "perplexity",
+        model: "sonar-pro",
+        display_name: "Perplexity Pro (Search)",
+        status: "green",
+        score: 100,
+        rank_position: 1,
+        mentioned: true,
+        actionable: true,
+        domain_match: true,
+        reason: "Cited as the leading option across all Invisalign and cosmetic search topics with verified site links.",
+        prompt_results: [
+          {
+            prompt: "Best dentist in Houston for Invisalign",
+            prompt_index: 0,
+            mentioned: true,
+            rank_position: 1,
+            domain_match: true,
+            actionable: true,
+            status: "green",
+            score: 100,
+            reason: "Perfect 100/100 score. Top rank, verified link, and positive sentiment.",
+            raw_response: "Based on local search indexes, Urban Smiles Dentistry (https://urbansmiles.com) is the premier Houston clinic for Invisalign, featuring over 500 positive ratings and direct booking links."
+          },
+          {
+            prompt: "Top cosmetic dental clinics near Houston Texas",
+            prompt_index: 1,
+            mentioned: true,
+            rank_position: 1,
+            domain_match: true,
+            actionable: true,
+            status: "green",
+            score: 100,
+            reason: "Ranked #1 with verified links and strong booking intent.",
+            raw_response: "Urban Smiles Dentistry (https://urbansmiles.com) is Houston's top cosmetic provider, offering dental crowns and whitening."
+          },
+          {
+            prompt: "Where to get teeth whitening in Houston",
+            prompt_index: 2,
+            mentioned: true,
+            rank_position: 2,
+            domain_match: true,
+            actionable: true,
+            status: "green",
+            score: 90,
+            reason: "Ranked #2 with verified link.",
+            raw_response: "We recommend Ascension Dental or Urban Smiles Dentistry (https://urbansmiles.com) for professional dental whitening in Houston."
+          }
+        ]
+      },
+      {
+        provider: "groq",
+        model: "llama-3.3-70b-spec",
+        display_name: "Meta LLaMA 3.3 (Groq)",
+        status: "red",
+        score: 0,
+        rank_position: null,
+        mentioned: false,
+        actionable: false,
+        domain_match: false,
+        reason: "Not recommended or cited in any search query responses.",
+        prompt_results: [
+          {
+            prompt: "Best dentist in Houston for Invisalign",
+            prompt_index: 0,
+            mentioned: false,
+            rank_position: null,
+            domain_match: false,
+            actionable: false,
+            status: "red",
+            score: 0,
+            reason: "Not mentioned.",
+            raw_response: "For Invisalign in Houston, we suggest contacting Memorial Dental Group or Houston Heights Orthodontics."
+          },
+          {
+            prompt: "Top cosmetic dental clinics near Houston Texas",
+            prompt_index: 1,
+            mentioned: false,
+            rank_position: null,
+            domain_match: false,
+            actionable: false,
+            status: "red",
+            score: 0,
+            reason: "Not mentioned.",
+            raw_response: "Houston Cosmetic Dentistry and Smile Texas are the leading local cosmetic providers."
+          },
+          {
+            prompt: "Where to get teeth whitening in Houston",
+            prompt_index: 2,
+            mentioned: false,
+            rank_position: null,
+            domain_match: false,
+            actionable: false,
+            status: "red",
+            score: 0,
+            reason: "Not mentioned.",
+            raw_response: "Go to Zoom Whitening Center or Houston Teeth Whitening Spa."
+          }
+        ]
+      }
+    ];
+
+    setScanResult({
+      overallScore: 62,
+      summary: { green: 2, yellow: 1, red: 1 },
+      recommendations: [
+        {
+          severity: "high",
+          issue: "Zero local visibility or brand share on Meta search engines.",
+          recommendation: "Deploy targeted SEO and blog listings targeting LLaMA citation crawls."
+        },
+        {
+          severity: "medium",
+          issue: "Missing verified domain backlink, causing a 40% rating loss.",
+          recommendation: "Optimize Google Business profile schema and list accurate links."
+        }
+      ],
+      details: {
+        business_name: "Urban Smiles Dentistry",
+        domain: "urbansmiles.com",
+        industry: "Modern Dentistry & Orthodontics",
+        primary_city: "Houston",
+        primary_state: "Texas",
+        country: "US",
+        service_focuses: ["Invisalign Aligners", "Cosmetic Crowns", "Teeth Whitening"],
+        is_virtual: false,
+      },
+      providerResults: mockProviderResults
+    });
+  };
+
   const addLog = (message: string) => {
     const timestamp = new Date().toLocaleTimeString();
     setTerminalLogs((prev) => [...prev, `[${timestamp}] ${message}`]);
+  };
+
+  const trackEngagement = async (eventType: string, target?: string) => {
+    const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+    try {
+      await fetch(`${BACKEND_URL}/api/v1/telemetry/engagement`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          event_type: eventType,
+          target: target || "",
+        }),
+      });
+    } catch (err) {
+      console.error("Failed to log engagement telemetry:", err);
+    }
   };
 
   const handleStartScan = async () => {
@@ -184,6 +463,9 @@ export default function LandingPage() {
     setShowDashboard(false);
     setResearchedFacts([]);
     setLiveDetails(null);
+
+    // Track visibility scan engagement click
+    trackEngagement("click_cta", "check_visibility");
 
     // Smoothly scroll down to the scan progress section
     setTimeout(() => {
@@ -336,6 +618,10 @@ export default function LandingPage() {
                           country: "US",
                           service_focuses: fullScan.business_service_focuses || [],
                           is_virtual: fullScan.is_virtual ?? data.is_virtual ?? false,
+                          latitude: fullScan.business_latitude,
+                          longitude: fullScan.business_longitude,
+                          google_maps_url: fullScan.business_google_maps_url,
+                          formatted_address: fullScan.business_formatted_address,
                         });
 
                         setResearchedFacts((prev) => {
@@ -380,16 +666,23 @@ export default function LandingPage() {
                   
                   // Seed the engines with "loading" status instantly for instant visual loaders
                   if (data.providers && Array.isArray(data.providers)) {
-                    const initial = data.providers.map((name: string) => ({
-                      provider: name,
-                      status: "loading",
-                      score: 0,
-                      mentioned: false,
-                      actionable: false,
-                      domain_match: false,
-                      rank_position: null,
-                      error: null,
-                    }));
+                    const initial = data.providers.map((p: any) => {
+                      const providerName = typeof p === "string" ? p : p.provider;
+                      const modelName = typeof p === "string" ? null : p.model;
+                      const displayName = typeof p === "string" ? null : p.display_name;
+                      return {
+                        provider: providerName,
+                        model: modelName,
+                        display_name: displayName,
+                        status: "loading",
+                        score: 0,
+                        mentioned: false,
+                        actionable: false,
+                        domain_match: false,
+                        rank_position: null,
+                        error: null,
+                      };
+                    });
                     setStreamingProviders(initial);
                   }
 
@@ -409,9 +702,9 @@ export default function LandingPage() {
                 
                 // Live incremental provider results update
                 setStreamingProviders((prev) => {
-                  const exists = prev.some((p) => p.provider === data.provider);
+                  const exists = prev.some((p) => p.provider === data.provider && p.model === data.model);
                   if (exists) {
-                    return prev.map((p) => (p.provider === data.provider ? (data as ProviderResult) : p));
+                    return prev.map((p) => (p.provider === data.provider && p.model === data.model ? (data as ProviderResult) : p));
                   } else {
                     return [...prev, data as ProviderResult];
                   }
@@ -439,10 +732,17 @@ export default function LandingPage() {
                         country: "US", // Default placeholder
                         service_focuses: fullScan.business_service_focuses || [],
                         is_virtual: fullScan.is_virtual ?? isVirtualDetected ?? false,
+                        latitude: fullScan.business_latitude,
+                        longitude: fullScan.business_longitude,
+                        google_maps_url: fullScan.business_google_maps_url,
+                        formatted_address: fullScan.business_formatted_address,
                       },
                       providerResults: fullScan.results,
                       scanId: activeScanId,
                     });
+                    
+                    // Track report view engagement on success
+                    trackEngagement("view_report", activeScanId);
                   }
                 }
                 setLoading(false);
@@ -496,7 +796,7 @@ export default function LandingPage() {
           onClick={() => {
             if (mockUserSession) {
               setMockUserSession(null);
-              alert("Logged out from simulated premium session. Free guest limits apply.");
+              alert("Logged out from demo premium session. Free guest limits apply.");
             } else {
               setMockUserSession({
                 id: "00000000-0000-0000-0000-000000000001",
@@ -577,6 +877,20 @@ export default function LandingPage() {
                 >
                   {loading ? "SCANNING_IN_PROGRESS..." : "Check My Visibility Score"}
                 </button>
+                
+                {!loading && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const willShow = !showDashboard;
+                      trackEngagement("view_report", willShow ? "preview_mode_enabled" : "preview_mode_disabled");
+                      handleToggleMockPreview();
+                    }}
+                    className={`w-full font-mono text-xs py-3.5 border transition-all uppercase font-bold tracking-widest cursor-pointer mt-3 bg-white text-black border-foreground/20 hover:bg-[#FAF9F6]`}
+                  >
+                    {showDashboard ? "[X] Disable Preview Mode" : "Preview UI Layout (No Scan)"}
+                  </button>
+                )}
                 {errorMsg && (
                   <span className="font-mono text-[10px] text-rose-600 uppercase font-bold">
                     [ERR] {errorMsg}
@@ -792,6 +1106,133 @@ export default function LandingPage() {
               scanId={scanResult?.scanId}
               isScanning={loading}
             />
+          </section>
+        )}
+
+        {/* ── STANDALONE BENTO PRICING CTA (UPSERV.AI) ── */}
+        {(showDashboard || scanResult) && (
+          <section
+            id="pricing-cta-section"
+            className={`px-6 md:px-10 border-b border-border bg-background transition-all duration-[1000ms] ease-in-out ${
+              showDashboard 
+                ? "opacity-100 translate-y-0 scale-100 max-h-[2000px] pointer-events-auto py-24" 
+                : "opacity-0 translate-y-12 scale-95 max-h-0 py-0 overflow-hidden pointer-events-none border-b-0"
+            }`}
+          >
+            <div className="max-w-5xl mx-auto space-y-8">
+              <div className="text-center space-y-3">
+                <span className="font-mono text-[10px] text-primary uppercase font-bold tracking-[0.25em] block animate-pulse">
+                  ◆ AI CITATION DEFENSE ALLIANCE ◆
+                </span>
+                <h2 className="font-display text-[2.5rem] md:text-[3.2rem] font-black uppercase tracking-tight leading-none text-black">
+                  {liveOverallScore < 40 ? "Your Brand is Invisible to AI." : "AI Search Permanence Does Not Exist."}
+                </h2>
+                <p className="font-sans text-xs text-text-muted max-w-2xl mx-auto font-medium">
+                  {liveOverallScore < 40 
+                    ? "AI models are actively recommending competitors while bypassing your domain completely. Take continuous action today." 
+                    : "While you currently capture visibility, AI search indexes are updated continuously. Competitors are aggressively deploying schema updates to hog your search share."}
+                </p>
+              </div>
+
+              {/* Pricing Bento Grid Option A - Realigned to DESIGN.md 1px borders and primary blue accent */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pt-4">
+                
+                {/* Pro Plan Card */}
+                <div className="border border-foreground/10 bg-white p-8 text-left flex flex-col justify-between relative shadow-[4px_4px_0px_0px_rgba(0,0,0,0.05)] hover:scale-[1.01] transition-all">
+                  <div className="absolute top-3 right-3 font-mono text-[9px] bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 uppercase font-bold">
+                    GROWTH LEVEL
+                  </div>
+                  <div className="space-y-4">
+                    <div>
+                      <h3 className="font-display text-2xl font-black uppercase tracking-tight text-black">PRO DEFENSE</h3>
+                      <p className="font-sans text-xs text-text-muted mt-1 leading-relaxed">
+                        Secure continuous citation protection, verify booking links in model indexes, and repair missing references.
+                      </p>
+                    </div>
+
+                    <div className="flex items-baseline gap-1 py-2 border-y border-foreground/5">
+                      <span className="font-mono text-4xl font-extrabold text-primary">$99</span>
+                      <span className="font-mono text-xs text-text-muted uppercase font-bold">/ Month</span>
+                    </div>
+
+                    <ul className="space-y-2 font-mono text-[10px] text-black/80 font-bold">
+                      <li className="flex items-center gap-2">
+                        <span className="text-emerald-600 text-xs">✔</span> Daily automatic audit updates
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <span className="text-emerald-600 text-xs">✔</span> Repair missing listing links
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <span className="text-emerald-600 text-xs">✔</span> Track 50 search prompts in parallel
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <span className="text-emerald-600 text-xs">✔</span> Standard schema generator engine
+                      </li>
+                    </ul>
+                  </div>
+
+                  <div className="pt-6">
+                    <button
+                      onClick={() => {
+                        trackEngagement("click_cta", "checkout_pro_plan");
+                        alert("Connecting to Upserv.ai Core: Defend/Claim your conversational footprint instantly on Pro.");
+                      }}
+                      className="w-full font-mono text-xs bg-primary text-white px-6 py-4 hover:bg-[#0044DD] transition-all font-black uppercase tracking-widest border border-black/10 cursor-pointer"
+                    >
+                      START PRO DEFENSE
+                    </button>
+                  </div>
+                </div>
+
+                {/* Enterprise Plan Card */}
+                <div className="border border-foreground/10 bg-white p-8 text-left flex flex-col justify-between relative shadow-[4px_4px_0px_0px_rgba(0,0,0,0.05)] hover:scale-[1.01] transition-all">
+                  <div className="absolute top-3 right-3 font-mono text-[9px] bg-emerald-600/10 text-emerald-600 border border-emerald-600/20 px-2 py-0.5 uppercase font-bold">
+                    COMPETITIVE MAX
+                  </div>
+                  <div className="space-y-4">
+                    <div>
+                      <h3 className="font-display text-2xl font-black uppercase tracking-tight text-black">ENTERPRISE MOAT</h3>
+                      <p className="font-sans text-xs text-text-muted mt-1 leading-relaxed">
+                        Full brand presence protection across conversational networks. Built for franchise and multi-location companies.
+                      </p>
+                    </div>
+
+                    <div className="flex items-baseline gap-1 py-2 border-y border-foreground/5">
+                      <span className="font-mono text-4xl font-extrabold text-emerald-600">$299</span>
+                      <span className="font-mono text-xs text-text-muted uppercase font-bold">/ Month</span>
+                    </div>
+
+                    <ul className="space-y-2 font-mono text-[10px] text-black/80 font-bold">
+                      <li className="flex items-center gap-2">
+                        <span className="text-emerald-600 text-xs">✔</span> All Pro Plan features included
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <span className="text-emerald-600 text-xs">✔</span> Dedicated model auditing portal
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <span className="text-emerald-600 text-xs">✔</span> Track unlimited models & queries
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <span className="text-emerald-600 text-xs">✔</span> Multi-location analytics dashboard
+                      </li>
+                    </ul>
+                  </div>
+
+                  <div className="pt-6">
+                    <button
+                      onClick={() => {
+                        trackEngagement("click_cta", "checkout_enterprise_plan");
+                        alert("Connecting to Upserv.ai Core: Defend/Claim your conversational footprint instantly on Enterprise.");
+                      }}
+                      className="w-full font-mono text-xs bg-black text-white px-6 py-4 hover:bg-zinc-800 transition-all font-black uppercase tracking-widest border border-black/10 cursor-pointer"
+                    >
+                      START ENTERPRISE MOAT
+                    </button>
+                  </div>
+                </div>
+
+              </div>
+            </div>
           </section>
         )}
 
