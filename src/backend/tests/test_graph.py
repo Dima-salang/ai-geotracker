@@ -49,6 +49,22 @@ class TestValidateInput:
         domain_errors = [e for e in result["errors"] if "domain" in e.lower()]
         assert len(domain_errors) == 0
 
+    def test_accepts_multidot_domain(self):
+        req = ScanRequest(
+            business_name="Mapua University",
+            domain="mapua.edu.ph",
+            industry="education",
+            primary_city="Manila",
+            primary_state="Metro Manila",
+            country="Philippines",
+        )
+        state = ScanState(request=req)
+
+        result = validate_input(state)
+
+        domain_errors = [e for e in result["errors"] if "domain" in e.lower()]
+        assert len(domain_errors) == 0
+
     def test_rejects_empty_name(self):
         req = ScanRequest(
             business_name="",
