@@ -23,12 +23,75 @@ from app.services.user_service import UserService
 from app.services.provider_service import ProviderService
 from app.services.scan_service import ScanService
 from app.services.search_service import SearchRequest, SearchResponse, SearchService
+import os
+import logging
+import jwt
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+
+logger = logging.getLogger("app.api.v1.endpoints")
+security = HTTPBearer(auto_error=False)
+
+def get_current_user_optional(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security), 
+    db: Session = Depends(get_db)
+) -> Optional[User]:
+    if not credentials:
+        return None
+    token = credentials.credentials
+    supabase_secret = os.getenv("SUPABASE_SECRET_KEY")
+    if not supabase_secret:
+        return None
+    try:
+        payload = jwt.decode(token, supabase_secret, algorithms=["HS256"], audience="authenticated")
+        user_id_str = payload.get("sub")
+        email = payload.get("email")
+        if not user_id_str:
+            return None
+        
+        user_uuid = uuid.UUID(user_id_str)
+        user = db.query(User).filter(User.id == user_uuid).first()
+        if not user:
+            default_org_id = uuid.UUID("00000000-0000-0000-0000-000000000000")
+            from app.models.schema import Organization
+            org = db.query(Organization).filter(Organization.id == default_org_id).first()
+            if not org:
+                org = Organization(id=default_org_id, name="Default Organization")
+                db.add(org)
+                db.commit()
+                db.refresh(org)
+            
+            user_metadata = payload.get("user_metadata", {})
+            full_name = user_metadata.get("full_name", "")
+            first_name = full_name.split(" ")[0] if full_name else "User"
+            last_name = " ".join(full_name.split(" ")[1:]) if full_name and len(full_name.split(" ")) > 1 else ""
+            
+            user = User(
+                id=user_uuid,
+                organization_id=default_org_id,
+                email=email,
+                first_name=first_name,
+                last_name=last_name,
+                role="user",
+                tier="premium",
+                auth_provider="google"
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+        return user
+    except Exception as e:
+        logger.warning("Supabase JWT verification failed: %s", e)
+        return None
 
 router = APIRouter()
 
 
 @router.post("/scan")
-async def run_scan(req: ScanRequest, db: Session = Depends(get_db)):
+async def run_scan(
+    req: ScanRequest, 
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
+):
     # Clean domain format
     clean_domain = req.domain.strip().lower()
     clean_domain = clean_domain.replace("https://", "").replace("http://", "").replace("www.", "")
@@ -36,14 +99,23 @@ async def run_scan(req: ScanRequest, db: Session = Depends(get_db)):
 
     # Check user tier
     is_premium = False
-    if req.user_id:
+    
+    # Prioritize active authenticated user from JWT
+    user = current_user
+    
+    # Fallback to req.user_id for local mock session testing
+    if not user and req.user_id:
         try:
             user_uuid = uuid.UUID(req.user_id)
             user = db.query(User).filter(User.id == user_uuid).first()
-            if user and user.tier in ("premium", "enterprise"):
-                is_premium = True
         except ValueError:
             pass
+
+    if user:
+        # Override the request user_id with authentic user's id
+        req.user_id = str(user.id)
+        if user.tier in ("premium", "enterprise"):
+            is_premium = True
 
     if not is_premium:
         # Query DB count of scans for this domain to check limit
