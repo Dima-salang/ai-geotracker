@@ -61,11 +61,11 @@ def seed_database():
             db.add(user)
             db.commit()
 
-        # 3. Create Default ProviderConfigs if empty
-        from app.services.provider_service import DEFAULT_PROVIDERS
-        for provider, defaults in DEFAULT_PROVIDERS.items():
-            existing = db.query(ProviderConfig).filter(ProviderConfig.provider == provider).first()
-            if not existing:
+        # 3. Create Default ProviderConfigs if completely empty (fresh install)
+        count = db.query(ProviderConfig).count()
+        if count == 0:
+            from app.services.provider_service import DEFAULT_PROVIDERS
+            for provider, defaults in DEFAULT_PROVIDERS.items():
                 config = ProviderConfig(
                     provider=provider,
                     model=defaults["model"],
@@ -75,7 +75,7 @@ def seed_database():
                 )
                 config.api_key = ""  # Trigger setter (encrypts empty string)
                 db.add(config)
-        db.commit()
+            db.commit()
 
         # 4. Create Default SystemConfigs if empty
         existing_serper_key = db.query(SystemConfig).filter(SystemConfig.key == "serper_api_key").first()
@@ -86,6 +86,26 @@ def seed_database():
             )
             serper_config.set_value("", encrypt=True)
             db.add(serper_config)
+            db.commit()
+
+        existing_fallback = db.query(SystemConfig).filter(SystemConfig.key == "grounding_fallback_provider").first()
+        if not existing_fallback:
+            fallback_config = SystemConfig(
+                key="grounding_fallback_provider",
+                is_encrypted=False
+            )
+            fallback_config.set_value("gemini", encrypt=False)
+            db.add(fallback_config)
+            db.commit()
+
+        existing_grounding_toggle = db.query(SystemConfig).filter(SystemConfig.key == "enable_search_grounding").first()
+        if not existing_grounding_toggle:
+            grounding_toggle_config = SystemConfig(
+                key="enable_search_grounding",
+                is_encrypted=False
+            )
+            grounding_toggle_config.set_value("true", encrypt=False)
+            db.add(grounding_toggle_config)
             db.commit()
     except Exception as e:
         print(f"Error seeding database: {e}")
