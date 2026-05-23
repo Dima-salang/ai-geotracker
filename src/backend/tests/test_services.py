@@ -6,7 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.models.database import Base
-from app.models.schema import BusinessCreate, ProviderConfigCreate
+from app.models.schema import BusinessCreate, ProviderConfigCreate, ProviderConfig
 from app.services.user_service import UserService
 from app.services.provider_service import ProviderService, DEFAULT_PROVIDERS
 
@@ -127,6 +127,7 @@ def test_provider_service_configs(db_session):
 
     # 3. Update existing provider config
     update_data = ProviderConfigCreate(
+        id=config.id,
         provider="gemini",
         model="gemini/gemini-2.0-pro",
         api_base="https://new.gemini.endpoint",
@@ -140,6 +141,52 @@ def test_provider_service_configs(db_session):
     assert updated.api_base == "https://new.gemini.endpoint"
     assert updated.api_key == "updated_secret_key"
     assert updated.timeout_seconds == 30
+
+
+def test_provider_service_multiple_models_same_provider(db_session):
+    # 1. Create first gemini model
+    config1 = ProviderConfigCreate(
+        provider="gemini",
+        model="gemini/gemini-2.0-flash",
+        api_key="key_1",
+        is_active=True,
+        timeout_seconds=15
+    )
+    res1 = ProviderService.create_provider_config(db_session, config1)
+    assert res1.id is not None
+    assert res1.provider == "gemini"
+    assert res1.model == "gemini/gemini-2.0-flash"
+
+    # 2. Create second gemini model (should create a new row since model is different and no id provided)
+    config2 = ProviderConfigCreate(
+        provider="gemini",
+        model="gemini/gemma-2-27b-it",
+        api_key="key_2",
+        is_active=True,
+        timeout_seconds=20
+    )
+    res2 = ProviderService.create_provider_config(db_session, config2)
+    assert res2.id is not None
+    assert res2.id != res1.id  # Must be a separate row!
+    assert res2.provider == "gemini"
+    assert res2.model == "gemini/gemma-2-27b-it"
+
+    # 3. Update the second model using its id (should change the model name without replacing or clashing)
+    update_config2 = ProviderConfigCreate(
+        id=res2.id,
+        provider="gemini",
+        model="gemini/gemma-3-custom",
+        api_key="key_2_updated",
+        is_active=True,
+        timeout_seconds=30
+    )
+    updated2 = ProviderService.create_provider_config(db_session, update_config2)
+    assert updated2.id == res2.id
+    assert updated2.model == "gemini/gemma-3-custom"
+
+    # Verify first model is untouched
+    fetched1 = db_session.query(ProviderConfig).filter(ProviderConfig.id == res1.id).first()
+    assert fetched1.model == "gemini/gemini-2.0-flash"
 
 
 @pytest.mark.asyncio

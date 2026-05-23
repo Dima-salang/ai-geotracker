@@ -45,6 +45,11 @@ def fixture_db_session():
 
 @pytest.mark.asyncio
 async def test_scan_event_stream_domain_only_enrichment(db_session, mocker):
+    mocker.patch(
+        "app.services.search_service.SearchService.search",
+        new_callable=mocker.AsyncMock,
+        return_value=[]
+    )
     # Mock graph to return classification and prompts with updated request
     mock_classify_resp = mocker.MagicMock()
     mock_classify_resp.choices = [mocker.MagicMock()]
@@ -406,4 +411,40 @@ def test_crud_providers(client, db_session):
     res = client.delete(f"/api/v1/providers/{non_existent_id}")
     assert res.status_code == 404
     assert "not found" in res.json()["detail"].lower()
+
+
+def test_scan_rate_limiting(client, db_session):
+    # Create Business and 3 Scans for a single domain
+    biz = Business(
+        id=uuid.uuid4(),
+        organization_id=uuid.UUID("00000000-0000-0000-0000-000000000000"),
+        name="Rate Limited Biz",
+        domain="limited.com",
+        industry="medical",
+        primary_city="Dallas",
+        primary_state="TX",
+        country="US"
+    )
+    db_session.add(biz)
+    db_session.commit()
+
+    for _ in range(3):
+        scan = Scan(
+            business_id=biz.id,
+            user_id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
+            status="complete",
+            overall_score=80
+        )
+        db_session.add(scan)
+    db_session.commit()
+
+    # Now make POST /api/v1/scan for limited.com
+    res = client.post("/api/v1/scan", json={
+        "domain": "limited.com",
+        "business_name": "Rate Limited Biz"
+    })
+    
+    assert res.status_code == 403
+    assert "abuse detection" in res.json()["detail"].lower()
+
 

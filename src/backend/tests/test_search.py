@@ -56,14 +56,30 @@ def test_system_config_endpoints(db_session):
 
     client = TestClient(app)
 
-    # 1. GET configs (should return default seeded serper_api_key with has_value=False)
+    # 1. GET configs (should return default seeded configs)
     response = client.get("/api/v1/configs")
     assert response.status_code == 200
     data = response.json()
-    assert len(data) == 1
-    assert data[0]["key"] == "serper_api_key"
-    assert data[0]["is_encrypted"] is True
-    assert data[0]["has_value"] is False
+    assert len(data) == 4
+    
+    serper_cfg = next(c for c in data if c["key"] == "serper_api_key")
+    assert serper_cfg["is_encrypted"] is True
+    assert serper_cfg["has_value"] is False
+
+    judge_cfg = next(c for c in data if c["key"] == "judge_model")
+    assert judge_cfg["is_encrypted"] is False
+    assert judge_cfg["has_value"] is True
+    assert judge_cfg["value"] == "gemini/gemini-3.1-flash"
+
+    fallback_cfg = next(c for c in data if c["key"] == "grounding_fallback_provider")
+    assert fallback_cfg["is_encrypted"] is False
+    assert fallback_cfg["has_value"] is True
+    assert fallback_cfg["value"] == "gemini"
+
+    toggle_cfg = next(c for c in data if c["key"] == "enable_search_grounding")
+    assert toggle_cfg["is_encrypted"] is False
+    assert toggle_cfg["has_value"] is True
+    assert toggle_cfg["value"] == "true"
 
     # 2. POST update config
     response = client.post(
@@ -79,7 +95,8 @@ def test_system_config_endpoints(db_session):
     response = client.get("/api/v1/configs")
     assert response.status_code == 200
     data = response.json()
-    assert data[0]["has_value"] is True
+    serper_cfg_updated = next(c for c in data if c["key"] == "serper_api_key")
+    assert serper_cfg_updated["has_value"] is True
 
     # 4. POST update config with __NO_CHANGE__ shouldn't overwrite the key
     response = client.post(
@@ -210,3 +227,102 @@ def test_search_endpoint(db_session):
         mock_search.assert_called_once_with("dallas coffee", "serper", db=db_session)
 
     app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_search_service_serper_dev_rich_metadata(db_session):
+    # Seed serper_api_key in DB
+    config = SystemConfig(key="serper_api_key", is_encrypted=True)
+    config.set_value("secret_serper_dev_key", encrypt=True)
+    db_session.add(config)
+    db_session.commit()
+
+    prompt = "apple inc"
+    mock_serper_response = {
+        "searchParameters": {
+            "q": "apple inc",
+            "gl": "us",
+            "hl": "en"
+        },
+        "knowledgeGraph": {
+            "title": "Apple",
+            "type": "Technology company",
+            "website": "http://www.apple.com/",
+            "description": "Apple Inc. is an American multinational technology company...",
+            "descriptionSource": "Wikipedia",
+            "attributes": {
+                "Headquarters": "Cupertino, CA",
+                "CEO": "Tim Cook"
+            }
+        },
+        "organic": [
+            {
+                "title": "Apple",
+                "link": "https://www.apple.com/",
+                "snippet": "Discover the innovative world of Apple...",
+                "rating": 4.8,
+                "ratingCount": 999,
+                "attributes": {
+                    "Products": "iPhone, iPad"
+                },
+                "sitelinks": [
+                    {
+                        "title": "Support",
+                        "link": "https://support.apple.com/"
+                    }
+                ],
+                "position": 1
+            }
+        ],
+        "peopleAlsoAsk": [
+            {
+                "question": "What does Apple Inc mean?",
+                "snippet": "Apple Inc., formerly Apple Computer, Inc...",
+                "title": "Apple Inc. | Britannica",
+                "link": "https://www.britannica.com/topic/Apple-Inc"
+            }
+        ],
+        "relatedSearches": [
+            {
+                "query": "Apple Inc competitors"
+            }
+        ]
+    }
+
+    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+        from unittest.mock import MagicMock
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = mock_serper_response
+        mock_post.return_value = mock_response
+
+        results = await SearchService.search(prompt, "serper", db=db_session)
+
+        assert len(results) == 1
+        res = results[0]
+        assert res.title == "Apple"
+        assert res.link == "https://www.apple.com/"
+        assert res.snippet == "Discover the innovative world of Apple..."
+        assert res.position == 1
+
+        # Assert rich metadata is parsed successfully
+        assert res.metadata is not None
+        assert res.metadata.rating == 4.8
+        assert res.metadata.ratingCount == 999
+        assert res.metadata.attributes == {"Products": "iPhone, iPad"}
+        assert len(res.metadata.sitelinks) == 1
+        assert res.metadata.sitelinks[0].title == "Support"
+        assert res.metadata.sitelinks[0].link == "https://support.apple.com/"
+
+        # Assert global fields are attached
+        assert res.metadata.searchParameters == {"q": "apple inc", "gl": "us", "hl": "en"}
+        assert len(res.metadata.peopleAlsoAsk) == 1
+        assert res.metadata.peopleAlsoAsk[0].question == "What does Apple Inc mean?"
+        assert res.metadata.peopleAlsoAsk[0].link == "https://www.britannica.com/topic/Apple-Inc"
+        assert len(res.metadata.relatedSearches) == 1
+        assert res.metadata.relatedSearches[0].query == "Apple Inc competitors"
+        assert res.metadata.knowledgeGraph is not None
+        assert res.metadata.knowledgeGraph.title == "Apple"
+        assert res.metadata.knowledgeGraph.website == "http://www.apple.com/"
+        assert res.metadata.knowledgeGraph.attributes == {"Headquarters": "Cupertino, CA", "CEO": "Tim Cook"}
+
