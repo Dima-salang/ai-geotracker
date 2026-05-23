@@ -27,7 +27,20 @@ router = APIRouter()
 
 
 @router.post("/scan")
-async def run_scan(req: ScanRequest):
+async def run_scan(req: ScanRequest, db: Session = Depends(get_db)):
+    # Clean domain format
+    clean_domain = req.domain.strip().lower()
+    clean_domain = clean_domain.replace("https://", "").replace("http://", "").replace("www.", "")
+    clean_domain = clean_domain.split("/")[0]
+
+    # Query DB count of scans for this domain to check limit
+    existing_count = db.query(Scan).join(Business).filter(Business.domain == clean_domain).count()
+    if existing_count >= 3:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Abuse detection: '{clean_domain}' has already been scanned {existing_count} times. Please subscribe or log in to unlock comprehensive audits."
+        )
+
     return StreamingResponse(
         ScanService.scan_event_stream(req),
         media_type="text/event-stream",
@@ -44,11 +57,13 @@ async def run_scan(req: ScanRequest):
 def get_providers(db: Session = Depends(get_db)):
     """Retrieve all active settings for AI Engine audits, masking credentials."""
     from app.services.provider_service import DEFAULT_PROVIDERS
-    
-    dirty = False
-    for provider, defaults in DEFAULT_PROVIDERS.items():
-        existing = db.query(ProviderConfig).filter(ProviderConfig.provider == provider).first()
-        if not existing:
+
+    # Seed defaults only when the table is completely empty (fresh install).
+    # Once any providers exist — even if some have been intentionally deleted —
+    # we leave the DB as-is so operator deletions are permanent.
+    count = db.query(ProviderConfig).count()
+    if count == 0:
+        for provider, defaults in DEFAULT_PROVIDERS.items():
             config = ProviderConfig(
                 provider=provider,
                 model=defaults["model"],
@@ -58,11 +73,8 @@ def get_providers(db: Session = Depends(get_db)):
             )
             config.api_key = ""
             db.add(config)
-            dirty = True
-            
-    if dirty:
         db.commit()
-        
+
     configs = db.query(ProviderConfig).all()
     return [
         {
@@ -104,6 +116,30 @@ def get_configs(db: Session = Depends(get_db)):
         db.add(config)
         db.commit()
 
+    # Ensure judge_model is seeded
+    existing_judge = db.query(SystemConfig).filter(SystemConfig.key == "judge_model").first()
+    if not existing_judge:
+        config = SystemConfig(key="judge_model", is_encrypted=False)
+        config.set_value("gemini/gemini-3.1-flash", encrypt=False)
+        db.add(config)
+        db.commit()
+
+    # Ensure grounding_fallback_provider is seeded
+    existing_fallback = db.query(SystemConfig).filter(SystemConfig.key == "grounding_fallback_provider").first()
+    if not existing_fallback:
+        config = SystemConfig(key="grounding_fallback_provider", is_encrypted=False)
+        config.set_value("gemini", encrypt=False)
+        db.add(config)
+        db.commit()
+
+    # Ensure enable_search_grounding is seeded
+    existing_grounding_toggle = db.query(SystemConfig).filter(SystemConfig.key == "enable_search_grounding").first()
+    if not existing_grounding_toggle:
+        config = SystemConfig(key="enable_search_grounding", is_encrypted=False)
+        config.set_value("true", encrypt=False)
+        db.add(config)
+        db.commit()
+
     configs = db.query(SystemConfig).all()
     return [
         SystemConfigRead(
@@ -111,6 +147,7 @@ def get_configs(db: Session = Depends(get_db)):
             key=c.key,
             is_encrypted=c.is_encrypted,
             has_value=bool(c.value and len(c.decrypted_value) > 0),
+            value=c.value if not c.is_encrypted else None,
             created_at=c.created_at,
             updated_at=c.updated_at
         )
@@ -138,6 +175,7 @@ def update_config(data: SystemConfigUpdateSchema, db: Session = Depends(get_db))
         key=config.key,
         is_encrypted=config.is_encrypted,
         has_value=bool(config.value and len(config.decrypted_value) > 0),
+        value=config.value if not config.is_encrypted else None,
         created_at=config.created_at,
         updated_at=config.updated_at
     )
