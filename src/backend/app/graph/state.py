@@ -16,6 +16,7 @@ class ScanRequest(BaseModel):
 
 class ProviderResult(BaseModel):
     provider: str
+    model: Optional[str] = None
     status: str = "red"
     score: int = 0
     rank_position: Optional[int] = None
@@ -35,6 +36,7 @@ class ScanState(BaseModel):
     coordinates: Optional[tuple[float, float]] = None
     suburbs: list[str] = []
     prompts: list[str] = []
+    search_results: list[dict] = []
     provider_results: list[ProviderResult] = []
     overall_score: Optional[int] = None
     summary: dict = {}
