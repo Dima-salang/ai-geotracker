@@ -14,7 +14,7 @@ from app.services.search_service import SearchProviders, SearchService
 
 logger = logging.getLogger("app.graph.nodes")
 
-DOMAIN_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9\-]*\.[a-zA-Z]{2,}$")
+DOMAIN_RE = re.compile(r"^(?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]*[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$")
 
 CLASSIFY_PROMPT = """You are an expert market intelligence and entity extraction assistant. Analyze the business details provided below to determine structural business properties and generate highly specific human search queries for AI engines.
 
