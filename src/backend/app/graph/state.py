@@ -11,6 +11,7 @@ class ScanRequest(BaseModel):
     country: str = ""
     service_focuses: list[str] = []
     target_suburbs: list[str] = []
+    user_id: Optional[str] = None
 
 
 

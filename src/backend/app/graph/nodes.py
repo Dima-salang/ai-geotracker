@@ -927,25 +927,114 @@ def score_results(state: ScanState) -> dict:
     yellow = sum(1 for r in results if r.status == "yellow")
     red = sum(1 for r in results if r.status == "red")
 
+    # ── DYNAMIC EXECUTIVE SUMMARY SYNTHESIS ──
+    competitors_set = set()
+    reasons = []
+    mentioned_count = 0
+    total_prompts = 0
+    domain_match_count = 0
+    actionable_count = 0
+
+    for r in results:
+        if r.reason and r.score < 80:
+            reasons.append(r.reason)
+        
+        # Parse simulated outcomes
+        for pr_outcome in r.prompt_results:
+            total_prompts += 1
+            if pr_outcome.get("mentioned"):
+                mentioned_count += 1
+            if pr_outcome.get("domain_match"):
+                domain_match_count += 1
+            if pr_outcome.get("actionable"):
+                actionable_count += 1
+            
+            # Competitor list
+            for comp in pr_outcome.get("competitors", []):
+                c_clean = comp.strip().replace("https://", "").replace("http://", "").replace("www.", "")
+                if c_clean and c_clean.lower() != state.request.business_name.lower():
+                    competitors_set.add(c_clean.title())
+
+    total_mentions = mentioned_count + len(competitors_set)
+    client_sov = int((mentioned_count / total_mentions) * 100) if total_mentions > 0 else 0
+
+    top_competitors = list(competitors_set)[:3]
+    competitor_str = ", ".join(top_competitors) if top_competitors else "unresolved online rivals"
+
+    if mentioned_count == 0:
+        exec_summary = (
+            f"CRITICAL: Your brand is completely invisible across conversational search networks. "
+            f"Currently, local competitors like {competitor_str} are capturing 100% of digital recommendations. "
+            f"Simulated query pipelines failed to locate any references to your brand domain or service listings."
+        )
+    elif client_sov < 40:
+        exec_summary = (
+            f"WARNING: Your visibility in AI results is critically low, capturing only a {client_sov}% Share of Voice. "
+            f"Rival businesses like {competitor_str} are actively hogging recommendations. "
+            f"Missing citation directory profiles and structured metadata are primary reasons your brand is passed over."
+        )
+    elif client_sov < 75:
+        exec_summary = (
+            f"MODERATE: Your business has solid exposure, commanding a {client_sov}% Share of Voice. "
+            f"However, competitors like {competitor_str} still claim significant query real estate. "
+            f"Zero search permanence exists without continuous schema checks and local directory backlink authority."
+        )
+    else:
+        exec_summary = (
+            f"OPTIMAL: Your storefront dominates the AI search space with a strong {client_sov}% Share of Voice! "
+            f"You comfortably outrank local rivals like {competitor_str}. "
+            f"Defend this citation lead and protect your customer share from volatile model upgrades."
+        )
+
+    # ── SIMPLIFIED CLIENT-FRIENDLY STRATEGY ──
     recommendations = []
-    if overall < 50:
+    
+    # 1. Visibility gap
+    mention_ratio = mentioned_count / total_prompts if total_prompts > 0 else 0
+    if mention_ratio < 0.4:
         recommendations.append({
             "severity": "high",
-            "issue": "Low visibility across LLM providers",
-            "recommendation": "Improve online presence with service pages and local SEO",
+            "issue": "No Brand Recommendations Found",
+            "recommendation": "AI search engines are not recommending your business. To fix this, publish clear, simple lists of your services on your homepage so search bots can easily scan them."
+        })
+    
+    # 2. Direct website link gap
+    match_ratio = domain_match_count / mentioned_count if mentioned_count > 0 else 0
+    if mentioned_count > 0 and match_ratio < 0.5:
+        recommendations.append({
+            "severity": "medium",
+            "issue": "Website Link Missing in AI Answers",
+            "recommendation": "AI models recommend your brand but omit your direct website link. To fix this, list your domain link on major local business profiles and online directories."
+        })
+
+    # 3. Actionability / Booking gap
+    actionable_ratio = actionable_count / mentioned_count if mentioned_count > 0 else 0
+    if mentioned_count > 0 and actionable_ratio < 0.5:
+        recommendations.append({
+            "severity": "medium",
+            "issue": "No Direct Contact or Booking Links",
+            "recommendation": "AI engines do not instruct clients how to contact or book you. To fix this, place highly visible booking links and phone numbers on your main pages."
         })
 
     logger.info(
-        "score_results completed: Overall Score=%d, Distribution={green: %d, yellow: %d, red: %d}, Recommendations Count=%d",
+        "score_results completed: Overall Score=%d, Distribution={green: %d, yellow: %d, red: %d}, SOV=%d%%, Recommendations Count=%d",
         overall,
         green,
         yellow,
         red,
+        client_sov,
         len(recommendations)
     )
 
     return {
         "overall_score": overall,
-        "summary": {"green": green, "yellow": yellow, "red": red},
+        "summary": {
+            "green": green,
+            "yellow": yellow,
+            "red": red,
+            "client_sov": client_sov,
+            "executive_summary": exec_summary,
+            "competitors": list(competitors_set)[:5]
+        },
         "recommendations": recommendations,
     }

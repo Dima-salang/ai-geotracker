@@ -33,13 +33,25 @@ async def run_scan(req: ScanRequest, db: Session = Depends(get_db)):
     clean_domain = clean_domain.replace("https://", "").replace("http://", "").replace("www.", "")
     clean_domain = clean_domain.split("/")[0]
 
-    # Query DB count of scans for this domain to check limit
-    existing_count = db.query(Scan).join(Business).filter(Business.domain == clean_domain).count()
-    if existing_count >= 3:
-        raise HTTPException(
-            status_code=403,
-            detail=f"Abuse detection: '{clean_domain}' has already been scanned {existing_count} times. Please subscribe or log in to unlock comprehensive audits."
-        )
+    # Check user tier
+    is_premium = False
+    if req.user_id:
+        try:
+            user_uuid = uuid.UUID(req.user_id)
+            user = db.query(User).filter(User.id == user_uuid).first()
+            if user and user.tier in ("premium", "enterprise"):
+                is_premium = True
+        except ValueError:
+            pass
+
+    if not is_premium:
+        # Query DB count of scans for this domain to check limit
+        existing_count = db.query(Scan).join(Business).filter(Business.domain == clean_domain).count()
+        if existing_count >= 3:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Abuse detection: '{clean_domain}' has already been scanned {existing_count} times. Please subscribe or log in to unlock comprehensive audits."
+            )
 
     return StreamingResponse(
         ScanService.scan_event_stream(req),

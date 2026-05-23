@@ -62,9 +62,16 @@ class ScanService:
                 db.refresh(biz)
 
             # 2. Register the visibility Scan as running
+            scan_user_id = uuid.UUID("00000000-0000-0000-0000-000000000001")
+            if req.user_id:
+                try:
+                    scan_user_id = uuid.UUID(req.user_id)
+                except ValueError:
+                    pass
+
             scan = Scan(
                 business_id=biz.id,
-                user_id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
+                user_id=scan_user_id,
                 status="running",
                 overall_score=0,
                 summary={},
@@ -202,6 +209,8 @@ class ScanService:
             yield f"event: complete\ndata: {json.dumps({'overall_score': scan.overall_score, 'summary': scan.summary, 'recommendations': scan.recommendations})}\n\n"
 
         except Exception as e:
+            import logging
+            logging.exception("Scan event stream failed: %s", e)
             if scan:
                 scan.status = "failed"
                 db.commit()
