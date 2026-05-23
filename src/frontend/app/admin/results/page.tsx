@@ -7,6 +7,7 @@ interface ScanResult {
   id: string;
   scan_id: string;
   provider: string;
+  model: string | null;
   status: string;
   score: number | null;
   rank_position: number | null;
@@ -328,8 +329,15 @@ export default function ResultCRUD() {
                 <tbody>
                   {paginatedResults.map((r) => (
                     <tr key={r.id} className="border-b border-foreground/5 hover:bg-surface-container-lowest">
-                      <td className="p-4 font-mono text-foreground/80">{r.id.slice(0, 8)}...</td>
-                      <td className="p-4 font-bold text-foreground uppercase">{r.provider}</td>
+                      <td className="p-4 font-mono text-foreground/60">{r.id.slice(0, 8)}...</td>
+                      <td className="p-4 font-bold text-foreground uppercase">
+                        {r.provider}
+                        {r.model && (
+                          <span className="block font-mono text-[9px] text-text-muted lowercase tracking-tighter normal-case font-medium mt-1 select-all bg-foreground/5 px-1.5 py-0.5 rounded border border-foreground/5 max-w-[140px] truncate">
+                            {r.model.replace(/^openrouter\//, "").replace(/^openrouter_/, "")}
+                          </span>
+                        )}
+                      </td>
                       <td className="p-4 font-mono">
                         {r.score !== null ? `${r.score} / 100` : "N/A"}
                         {r.rank_position !== null && (
@@ -446,7 +454,28 @@ export default function ResultCRUD() {
                       </select>
                     </div>
                   </div>
-                ) : null}
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-surface-container-low border border-foreground/10 p-3 font-mono text-xs">
+                    <div>
+                      <span className="text-[10px] text-text-muted uppercase font-bold block mb-0.5">Scan Target</span>
+                      <span className="text-foreground uppercase block truncate max-w-full">
+                        {scans.find(s => s.id === formScanId)?.business_name || formScanId.slice(0, 8)}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-text-muted uppercase font-bold block mb-0.5">AI Provider</span>
+                      <span className="text-foreground uppercase font-bold block">{formProvider}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-text-muted uppercase font-bold block mb-0.5">Dynamic Model</span>
+                      <span className="text-foreground lowercase font-medium select-all block truncate max-w-full" title={editingResult?.model || "N/A"}>
+                        {editingResult?.model
+                          ? editingResult.model.replace(/^openrouter\//, "").replace(/^openrouter_/, "")
+                          : "N/A"}
+                      </span>
+                    </div>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>

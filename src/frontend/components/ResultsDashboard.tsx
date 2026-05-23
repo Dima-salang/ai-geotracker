@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 export interface ProviderResult {
   provider: string;
+  model?: string | null;
   status: string; // 'green' | 'yellow' | 'red'
   score: number;
   rank_position?: number | null;
@@ -67,6 +68,14 @@ export default function ResultsDashboard({
 }: ResultsDashboardProps) {
   const [copied, setCopied] = useState(false);
 
+  // Strip routing prefixes for clean display (openrouter/ and openrouter_)
+  const cleanLabel = (value: string | null | undefined): string => {
+    if (!value) return "";
+    return value
+      .replace(/^openrouter\//, "")
+      .replace(/^openrouter_/, "");
+  };
+
   const handleShare = () => {
     if (typeof window !== "undefined") {
       navigator.clipboard.writeText(window.location.href);
@@ -97,7 +106,7 @@ export default function ResultsDashboard({
     if (pr.error) {
       return {
         bg: "bg-rose-50/50 text-rose-800 border-rose-200/60 font-medium",
-        label: "✗ Error",
+        label: "✗",
         color: "text-rose-600",
         tooltip: pr.error,
       };
@@ -118,14 +127,14 @@ export default function ResultsDashboard({
       if (rank != null && rank <= 3) {
         return {
           bg: "bg-emerald-50 text-emerald-800 border-emerald-200 font-bold",
-          label: `✓ Top 3 (Rank #${rank})`,
+          label: `#${rank}`,
           color: "text-emerald-600",
           tooltip: `Business cited at premium position #${rank} for this search query.`,
         };
       } else {
         return {
           bg: "bg-amber-50 text-amber-800 border-amber-200 font-bold",
-          label: rank != null ? `⚠ Rank #${rank}` : "⚠ Mentioned",
+          label: rank != null ? `#${rank}` : "Mentioned",
           color: "text-amber-600",
           tooltip: rank != null 
             ? `Business cited but ranked outside top 3 (position #${rank}).`
@@ -135,7 +144,7 @@ export default function ResultsDashboard({
     } else {
       return {
         bg: "bg-rose-50 text-rose-800 border-rose-200",
-        label: "✗ No Mention",
+        label: "✗",
         color: "text-rose-600",
         tooltip: "No citation or visibility index detected for this prompt query.",
       };
@@ -314,7 +323,20 @@ export default function ResultsDashboard({
                 <th className="pb-3 font-medium uppercase w-[35%] text-left">Search Query Statement</th>
                 {providerResults.map((pr) => (
                   <th key={pr.provider} className="pb-3 font-medium uppercase text-center font-mono w-[15%]">
-                    {pr.provider}
+                    <span
+                      className="block text-foreground font-bold uppercase tracking-tight"
+                      title={pr.provider}
+                    >
+                      {cleanLabel(pr.provider) || pr.provider}
+                    </span>
+                    {pr.model && (
+                      <span
+                        className="block font-mono text-[9px] text-text-muted lowercase tracking-tighter normal-case font-medium mt-1 select-all bg-foreground/5 px-1 py-0.5 rounded border border-foreground/5 max-w-[125px] truncate mx-auto"
+                        title={pr.model}
+                      >
+                        {cleanLabel(pr.model)}
+                      </span>
+                    )}
                   </th>
                 ))}
               </tr>
