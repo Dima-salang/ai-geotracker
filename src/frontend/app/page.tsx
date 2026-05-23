@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useState, useRef, useEffect } from "react";
 import DitheredParticles from "../components/DitheredParticles";
 import ResultsDashboard, { ProviderResult, ScanRecommendation, ResearchedDetails } from "../components/ResultsDashboard";
+import { supabase } from "../utils/supabase";
 
 /* ── Nav Links ── */
 const NAV_LINKS = [
@@ -104,7 +105,39 @@ export default function LandingPage() {
   const [showDashboard, setShowDashboard] = useState(false);
   const [researchedFacts, setResearchedFacts] = useState<Array<{ id: string; label: string; value: string }>>([]);
   const [liveDetails, setLiveDetails] = useState<ResearchedDetails | null>(null);
-  const [mockUserSession, setMockUserSession] = useState<{ id: string; email: string; tier: string } | null>(null);
+  const [userSession, setUserSession] = useState<{ id: string; email: string; tier: string } | null>(null);
+  const [authToken, setAuthToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        setAuthToken(session.access_token);
+        setUserSession({
+          id: session.user.id,
+          email: session.user.email || "",
+          tier: "premium",
+        });
+      }
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session) {
+        setAuthToken(session.access_token);
+        setUserSession({
+          id: session.user.id,
+          email: session.user.email || "",
+          tier: "premium",
+        });
+      } else {
+        setAuthToken(null);
+        setUserSession(null);
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
 
   // Live computed results for real-time streaming inside ResultsDashboard
   const activeResults = loading ? streamingProviders : (scanResult?.providerResults || []);
@@ -482,6 +515,7 @@ export default function LandingPage() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          ...(authToken ? { "Authorization": `Bearer ${authToken}` } : {}),
         },
         body: JSON.stringify({
           domain: cleanDomain,
@@ -490,7 +524,7 @@ export default function LandingPage() {
           primary_city: "",
           primary_state: "",
           country: "",
-          user_id: mockUserSession ? mockUserSession.id : undefined,
+          user_id: userSession ? userSession.id : undefined,
         }),
       });
 
@@ -793,22 +827,26 @@ export default function LandingPage() {
         </div>
         <button
           id="sign-in-btn"
-          onClick={() => {
-            if (mockUserSession) {
-              setMockUserSession(null);
-              alert("Logged out from demo premium session. Free guest limits apply.");
+          onClick={async () => {
+            if (userSession) {
+              await supabase.auth.signOut();
+              alert("Logged out successfully.");
             } else {
-              setMockUserSession({
-                id: "00000000-0000-0000-0000-000000000001",
-                email: "manager@corporatefranchise.com",
-                tier: "enterprise"
+              const redirectTo = `${window.location.origin}/auth/callback`;
+              const { error } = await supabase.auth.signInWithOAuth({
+                provider: "google",
+                options: {
+                  redirectTo,
+                },
               });
-              alert("Logged in as premium manager Alex Manager. Infinite scans unlocked!");
+              if (error) {
+                alert(`Sign in failed: ${error.message}`);
+              }
             }
           }}
           className="font-mono text-xs tracking-tighter bg-primary text-white px-6 py-2 hover:bg-primary-container transition-all uppercase"
         >
-          {mockUserSession ? `[ ${mockUserSession.email.split("@")[0].toUpperCase()} (PREMIUM) / LOGOUT ]` : "SIGN_IN"}
+          {userSession ? `[ ${userSession.email.split("@")[0].toUpperCase()} (PREMIUM) / LOGOUT ]` : "SIGN_IN"}
         </button>
       </nav>
 
@@ -1075,166 +1113,37 @@ export default function LandingPage() {
         )}
 
         {/* ── DETAILED RESULTS DASHBOARD (TEMPORARY DISPLAY SECTION) ── */}
-        {(showDashboard || scanResult) && (
-          <section 
-            id="results-section" 
-            className={`px-6 md:px-10 border-b border-border bg-surface-container-low transition-all duration-[1000ms] ease-in-out ${
-              showDashboard 
-                ? "opacity-100 translate-y-0 scale-100 max-h-[4000px] pointer-events-auto py-16" 
-                : "opacity-0 translate-y-12 scale-95 max-h-0 py-0 overflow-hidden pointer-events-none border-b-0"
-            }`}
-          >
-            <div className="max-w-7xl mx-auto mb-8 flex flex-col sm:flex-row justify-between items-start sm:items-end border-b border-foreground/10 pb-4 gap-4">
-              <div>
-                <span className="font-mono text-xs text-primary mb-2 uppercase tracking-[0.2em] block">
-                  {loading ? "◆ AUDIT CURRENTLY RUNNING" : "REAL-TIME RESULTS DASHBOARD"}
-                </span>
-                <h2 className="font-display text-[2rem] font-bold tracking-tight uppercase leading-none">
-                  Discovery Scorecard
-                </h2>
-              </div>
-              <span className="font-mono text-[10px] text-text-muted mb-1 uppercase tracking-widest">
-                {loading ? "◆ STREAMING PARALLEL NODES..." : "SYSTEM_NODE: ONLINE"}
+        <section 
+          id="results-section" 
+          className={`px-6 md:px-10 border-border bg-surface-container-low transition-all duration-[1000ms] ease-in-out ${
+            (showDashboard || scanResult)
+              ? "opacity-100 translate-y-0 scale-100 max-h-[6000px] pointer-events-auto py-16 border-b" 
+              : "opacity-0 translate-y-12 scale-95 max-h-0 py-0 overflow-hidden pointer-events-none border-b-0"
+          }`}
+        >
+          <div className="max-w-7xl mx-auto mb-8 flex flex-col sm:flex-row justify-between items-start sm:items-end border-b border-foreground/10 pb-4 gap-4">
+            <div>
+              <span className="font-mono text-xs text-primary mb-2 uppercase tracking-[0.2em] block">
+                {loading ? "◆ AUDIT CURRENTLY RUNNING" : "REAL-TIME RESULTS DASHBOARD"}
               </span>
+              <h2 className="font-display text-[2rem] font-bold tracking-tight uppercase leading-none">
+                Discovery Scorecard
+              </h2>
             </div>
-            <ResultsDashboard
-              overallScore={liveOverallScore}
-              summary={liveSummary}
-              recommendations={liveRecommendations}
-              details={liveResearchedDetails}
-              providerResults={activeResults}
-              scanId={scanResult?.scanId}
-              isScanning={loading}
-            />
-          </section>
-        )}
-
-        {/* ── STANDALONE BENTO PRICING CTA (UPSERV.AI) ── */}
-        {(showDashboard || scanResult) && (
-          <section
-            id="pricing-cta-section"
-            className={`px-6 md:px-10 border-b border-border bg-background transition-all duration-[1000ms] ease-in-out ${
-              showDashboard 
-                ? "opacity-100 translate-y-0 scale-100 max-h-[2000px] pointer-events-auto py-24" 
-                : "opacity-0 translate-y-12 scale-95 max-h-0 py-0 overflow-hidden pointer-events-none border-b-0"
-            }`}
-          >
-            <div className="max-w-5xl mx-auto space-y-8">
-              <div className="text-center space-y-3">
-                <span className="font-mono text-[10px] text-primary uppercase font-bold tracking-[0.25em] block animate-pulse">
-                  ◆ AI CITATION DEFENSE ALLIANCE ◆
-                </span>
-                <h2 className="font-display text-[2.5rem] md:text-[3.2rem] font-black uppercase tracking-tight leading-none text-black">
-                  {liveOverallScore < 40 ? "Your Brand is Invisible to AI." : "AI Search Permanence Does Not Exist."}
-                </h2>
-                <p className="font-sans text-xs text-text-muted max-w-2xl mx-auto font-medium">
-                  {liveOverallScore < 40 
-                    ? "AI models are actively recommending competitors while bypassing your domain completely. Take continuous action today." 
-                    : "While you currently capture visibility, AI search indexes are updated continuously. Competitors are aggressively deploying schema updates to hog your search share."}
-                </p>
-              </div>
-
-              {/* Pricing Bento Grid Option A - Realigned to DESIGN.md 1px borders and primary blue accent */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pt-4">
-                
-                {/* Pro Plan Card */}
-                <div className="border border-foreground/10 bg-white p-8 text-left flex flex-col justify-between relative shadow-[4px_4px_0px_0px_rgba(0,0,0,0.05)] hover:scale-[1.01] transition-all">
-                  <div className="absolute top-3 right-3 font-mono text-[9px] bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 uppercase font-bold">
-                    GROWTH LEVEL
-                  </div>
-                  <div className="space-y-4">
-                    <div>
-                      <h3 className="font-display text-2xl font-black uppercase tracking-tight text-black">PRO DEFENSE</h3>
-                      <p className="font-sans text-xs text-text-muted mt-1 leading-relaxed">
-                        Secure continuous citation protection, verify booking links in model indexes, and repair missing references.
-                      </p>
-                    </div>
-
-                    <div className="flex items-baseline gap-1 py-2 border-y border-foreground/5">
-                      <span className="font-mono text-4xl font-extrabold text-primary">$99</span>
-                      <span className="font-mono text-xs text-text-muted uppercase font-bold">/ Month</span>
-                    </div>
-
-                    <ul className="space-y-2 font-mono text-[10px] text-black/80 font-bold">
-                      <li className="flex items-center gap-2">
-                        <span className="text-emerald-600 text-xs">✔</span> Daily automatic audit updates
-                      </li>
-                      <li className="flex items-center gap-2">
-                        <span className="text-emerald-600 text-xs">✔</span> Repair missing listing links
-                      </li>
-                      <li className="flex items-center gap-2">
-                        <span className="text-emerald-600 text-xs">✔</span> Track 50 search prompts in parallel
-                      </li>
-                      <li className="flex items-center gap-2">
-                        <span className="text-emerald-600 text-xs">✔</span> Standard schema generator engine
-                      </li>
-                    </ul>
-                  </div>
-
-                  <div className="pt-6">
-                    <button
-                      onClick={() => {
-                        trackEngagement("click_cta", "checkout_pro_plan");
-                        alert("Connecting to Upserv.ai Core: Defend/Claim your conversational footprint instantly on Pro.");
-                      }}
-                      className="w-full font-mono text-xs bg-primary text-white px-6 py-4 hover:bg-[#0044DD] transition-all font-black uppercase tracking-widest border border-black/10 cursor-pointer"
-                    >
-                      START PRO DEFENSE
-                    </button>
-                  </div>
-                </div>
-
-                {/* Enterprise Plan Card */}
-                <div className="border border-foreground/10 bg-white p-8 text-left flex flex-col justify-between relative shadow-[4px_4px_0px_0px_rgba(0,0,0,0.05)] hover:scale-[1.01] transition-all">
-                  <div className="absolute top-3 right-3 font-mono text-[9px] bg-emerald-600/10 text-emerald-600 border border-emerald-600/20 px-2 py-0.5 uppercase font-bold">
-                    COMPETITIVE MAX
-                  </div>
-                  <div className="space-y-4">
-                    <div>
-                      <h3 className="font-display text-2xl font-black uppercase tracking-tight text-black">ENTERPRISE MOAT</h3>
-                      <p className="font-sans text-xs text-text-muted mt-1 leading-relaxed">
-                        Full brand presence protection across conversational networks. Built for franchise and multi-location companies.
-                      </p>
-                    </div>
-
-                    <div className="flex items-baseline gap-1 py-2 border-y border-foreground/5">
-                      <span className="font-mono text-4xl font-extrabold text-emerald-600">$299</span>
-                      <span className="font-mono text-xs text-text-muted uppercase font-bold">/ Month</span>
-                    </div>
-
-                    <ul className="space-y-2 font-mono text-[10px] text-black/80 font-bold">
-                      <li className="flex items-center gap-2">
-                        <span className="text-emerald-600 text-xs">✔</span> All Pro Plan features included
-                      </li>
-                      <li className="flex items-center gap-2">
-                        <span className="text-emerald-600 text-xs">✔</span> Dedicated model auditing portal
-                      </li>
-                      <li className="flex items-center gap-2">
-                        <span className="text-emerald-600 text-xs">✔</span> Track unlimited models & queries
-                      </li>
-                      <li className="flex items-center gap-2">
-                        <span className="text-emerald-600 text-xs">✔</span> Multi-location analytics dashboard
-                      </li>
-                    </ul>
-                  </div>
-
-                  <div className="pt-6">
-                    <button
-                      onClick={() => {
-                        trackEngagement("click_cta", "checkout_enterprise_plan");
-                        alert("Connecting to Upserv.ai Core: Defend/Claim your conversational footprint instantly on Enterprise.");
-                      }}
-                      className="w-full font-mono text-xs bg-black text-white px-6 py-4 hover:bg-zinc-800 transition-all font-black uppercase tracking-widest border border-black/10 cursor-pointer"
-                    >
-                      START ENTERPRISE MOAT
-                    </button>
-                  </div>
-                </div>
-
-              </div>
-            </div>
-          </section>
-        )}
+            <span className="font-mono text-[10px] text-text-muted mb-1 uppercase tracking-widest">
+              {loading ? "◆ STREAMING PARALLEL NODES..." : "SYSTEM_NODE: ONLINE"}
+            </span>
+          </div>
+          <ResultsDashboard
+            overallScore={liveOverallScore}
+            summary={liveSummary}
+            recommendations={liveRecommendations}
+            details={liveResearchedDetails}
+            providerResults={activeResults}
+            scanId={scanResult?.scanId}
+            isScanning={loading}
+          />
+        </section>
 
         {/* ═══════════════════════ NETWORK STATS ═══════════════════════ */}
         <section id="stats-section" className="border-b border-border reveal-on-scroll">
