@@ -83,6 +83,7 @@ export default function LandingPage() {
   const [isVirtualDetected, setIsVirtualDetected] = useState<boolean | null>(null);
   const [terminalLogs, setTerminalLogs] = useState<string[]>([]);
   const [errorMsg, setErrorMsg] = useState("");
+  const [isRateLimited, setIsRateLimited] = useState(false);
   const [streamingProviders, setStreamingProviders] = useState<ProviderResult[]>([]);
   const [providerCount, setProviderCount] = useState(0);
 
@@ -169,6 +170,7 @@ export default function LandingPage() {
 
     setLoading(true);
     setErrorMsg("");
+    setIsRateLimited(false);
     setScanResult(null);
     setIsVirtualDetected(null);
     setProgressStage("initiated");
@@ -209,6 +211,14 @@ export default function LandingPage() {
       });
 
       if (!response.ok) {
+        if (response.status === 403) {
+          const errBody = await response.json().catch(() => ({ detail: "" }));
+          setIsRateLimited(true);
+          addLog("CRITICAL_BLOCK: Abuse detection threshold activated. Scan sequence terminated.");
+          addLog(`[WARN] ${errBody.detail || "Rate limit exceeded. Paid subscription required."}`);
+          setLoading(false);
+          return;
+        }
         throw new Error(`HTTP network error: status ${response.status}`);
       }
 
@@ -602,61 +612,136 @@ export default function LandingPage() {
                 : "opacity-100 translate-y-0 scale-100 max-h-[1200px] py-32 pointer-events-auto"
             }`}
           >
-            {/* The Morphing & Spinning Ethereal Blob */}
-            <div className="relative w-[240px] h-[240px] md:w-[320px] md:h-[320px] flex items-center justify-center mb-16 mt-8">
-              <div className="absolute inset-0 ethereal-blob transition-all duration-700"></div>
-              
-              {/* Overlay Grid Line Effect for premium look */}
-              <div className="absolute inset-0 pointer-events-none" style={{
-                backgroundImage: 'radial-gradient(var(--foreground) 1px, transparent 0)',
-                backgroundSize: '16px 16px',
-                opacity: 0.03
-              }}></div>
+            {isRateLimited ? (
+              <div className="w-full max-w-2xl flex flex-col items-center justify-center z-10">
+                {/* Premium Glassmorphic Card */}
+                <div className="w-full bg-white/40 backdrop-blur-xl border border-rose-500/20 p-8 md:p-12 flex flex-col items-center text-center shadow-2xl relative overflow-hidden mb-8">
+                  {/* Subtle Red Grid Glow overlay */}
+                  <div className="absolute inset-0 pointer-events-none bg-radial-gradient from-rose-500/5 to-transparent" />
+                  
+                  {/* Pulsing Shield Lock Icon */}
+                  <div className="w-16 h-16 bg-rose-500/10 border border-rose-500/30 rounded-full flex items-center justify-center mb-6 animate-pulse">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f43f5e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
+                      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                    </svg>
+                  </div>
 
-              {/* FLOATING TEXT PILLS STREAMING LIVE */}
-              {researchedFacts.map((fact, idx) => {
-                const pos = FLOATING_POSITIONS[idx % FLOATING_POSITIONS.length];
-                return (
-                  <div
-                    key={fact.id}
-                    className={`floating-pill floating-fact-enter-${(idx % 8) + 1} select-none`}
-                    style={{
-                      top: pos.top,
-                      left: pos.left,
-                      right: pos.right,
-                      bottom: pos.bottom,
-                    }}
-                  >
-                    <span className="font-mono text-[9px] text-primary/80 uppercase tracking-widest block mb-1 font-bold">
-                      {fact.label}
+                  <span className="font-mono text-xs text-rose-500 font-bold uppercase tracking-[0.2em] mb-3 block">
+                    ◆ ACCESS BLOCKED — 3 GUEST SCAN LIMIT EXCEEDED ◆
+                  </span>
+
+                  <h2 className="font-display text-[1.8rem] md:text-[2.2rem] font-bold uppercase tracking-tight leading-tight mb-4 text-foreground">
+                    Scan Limit Reached for {domain}
+                  </h2>
+
+                  <p className="font-sans text-sm text-text-muted max-w-lg mb-8 leading-relaxed">
+                    AI engines like Gemini, ChatGPT, and Claude are actively ranking your competitors instead of you. Don't let your business get left behind in the LLM search race! Upgrade now to run comprehensive parity audits and unlock the Schema Recommendation Engine.
+                  </p>
+
+                  <div className="flex flex-col sm:flex-row gap-4 w-full justify-center">
+                    <button
+                      onClick={() => alert("Prototype Checkout: Complete paid subscription flow ($49/mo) to unlock infinite audits.")}
+                      className="font-mono text-xs px-6 py-4 bg-primary text-white border border-primary font-bold hover:bg-transparent hover:text-primary transition-all uppercase tracking-widest cursor-pointer"
+                    >
+                      Unlock Full Audits ($49/mo)
+                    </button>
+                    <button
+                      onClick={() => {
+                        setIsRateLimited(false);
+                        setDomain("");
+                        setProgressStage("");
+                        document.getElementById("top-nav")?.scrollIntoView({ behavior: "smooth" });
+                      }}
+                      className="font-mono text-xs px-6 py-4 bg-transparent text-foreground border border-foreground/20 font-bold hover:bg-foreground hover:text-background transition-all uppercase tracking-widest cursor-pointer"
+                    >
+                      Audit New Domain
+                    </button>
+                  </div>
+                </div>
+
+                {/* Retro Blueprint Terminal Log Console */}
+                <div className="w-full bg-[#0d1117] text-[#58a6ff] border border-[#21262d] rounded-lg p-6 font-mono text-[11px] leading-relaxed shadow-xl text-left">
+                  <div className="flex justify-between items-center border-b border-[#21262d] pb-2 mb-3">
+                    <span className="text-[#f0883e] font-bold uppercase tracking-wider animate-pulse flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 bg-[#f0883e] rounded-full"></span>
+                      SYSTEM CORE CONSOLE — ERROR SYNC LOGS
                     </span>
-                    <span className="font-sans text-xs font-black text-foreground uppercase tracking-tight whitespace-nowrap">
-                      {fact.value}
+                    <span className="text-text-muted text-[9px] uppercase">
+                      CONNECTION TERMINATED
                     </span>
                   </div>
-                );
-              })}
-            </div>
+                  <div
+                    ref={consoleContainerRef}
+                    className="h-32 overflow-y-auto whitespace-pre-wrap select-text scrollbar-thin scrollbar-thumb-zinc-800"
+                  >
+                    {terminalLogs.map((log, index) => (
+                      <div key={index} className="mb-1 text-rose-400">
+                        {log}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <>
+                {/* The Morphing & Spinning Ethereal Blob */}
+                <div className="relative w-[240px] h-[240px] md:w-[320px] md:h-[320px] flex items-center justify-center mb-16 mt-8">
+                  <div className="absolute inset-0 ethereal-blob transition-all duration-700"></div>
+                  
+                  {/* Overlay Grid Line Effect for premium look */}
+                  <div className="absolute inset-0 pointer-events-none" style={{
+                    backgroundImage: 'radial-gradient(var(--foreground) 1px, transparent 0)',
+                    backgroundSize: '16px 16px',
+                    opacity: 0.03
+                  }}></div>
 
-            {/* Elegant Minimal Typography */}
-            <div className="text-center max-w-2xl relative z-10">
-              <span className="font-mono text-xs text-primary font-bold uppercase tracking-[0.2em] mb-4 block animate-pulse">
-                Auditing AI Visibility
-              </span>
-              
-              <h2 className="font-display text-[2rem] md:text-[2.5rem] font-bold uppercase tracking-tight leading-tight mb-4">
-                Analyzing {domain}
-              </h2>
-              
-              <p className="font-mono text-[10px] text-text-muted uppercase tracking-widest leading-relaxed">
-                {progressStage === "initiated" && "Initializing secure node audit..."}
-                {progressStage === "validated" && "Validating input parameters..."}
-                {progressStage === "classification" && "Grounding service footprint & category constraints..."}
-                {progressStage === "geocoding" && "Mapping global proximity search indexes..."}
-                {progressStage === "querying_providers" && `Querying ${providerCount || 8} AI engines in parallel...`}
-                {progressStage === "complete" && "Generating search visibility report..."}
-              </p>
-            </div>
+                  {/* FLOATING TEXT PILLS STREAMING LIVE */}
+                  {researchedFacts.map((fact, idx) => {
+                    const pos = FLOATING_POSITIONS[idx % FLOATING_POSITIONS.length];
+                    return (
+                      <div
+                        key={fact.id}
+                        className={`floating-pill floating-fact-enter-${(idx % 8) + 1} select-none`}
+                        style={{
+                          top: pos.top,
+                          left: pos.left,
+                          right: pos.right,
+                          bottom: pos.bottom,
+                        }}
+                      >
+                        <span className="font-mono text-[9px] text-primary/80 uppercase tracking-widest block mb-1 font-bold">
+                          {fact.label}
+                        </span>
+                        <span className="font-sans text-xs font-black text-foreground uppercase tracking-tight whitespace-nowrap">
+                          {fact.value}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Elegant Minimal Typography */}
+                <div className="text-center max-w-2xl relative z-10">
+                  <span className="font-mono text-xs text-primary font-bold uppercase tracking-[0.2em] mb-4 block animate-pulse">
+                    Auditing AI Visibility
+                  </span>
+                  
+                  <h2 className="font-display text-[2rem] md:text-[2.5rem] font-bold uppercase tracking-tight leading-tight mb-4">
+                    Analyzing {domain}
+                  </h2>
+                  
+                  <p className="font-mono text-[10px] text-text-muted uppercase tracking-widest leading-relaxed">
+                    {progressStage === "initiated" && "Initializing secure node audit..."}
+                    {progressStage === "validated" && "Validating input parameters..."}
+                    {progressStage === "classification" && "Grounding service footprint & category constraints..."}
+                    {progressStage === "geocoding" && "Mapping global proximity search indexes..."}
+                    {progressStage === "querying_providers" && `Querying ${providerCount || 8} AI engines in parallel...`}
+                    {progressStage === "complete" && "Generating search visibility report..."}
+                  </p>
+                </div>
+              </>
+            )}
           </section>
         )}
 
