@@ -108,7 +108,7 @@ class ScanService:
                     elif node_name == "classify":
                         d = output.get("classification", {})
                         prompt_count = len(output.get("prompts", []))
-                        yield f"event: progress\ndata: {json.dumps({'stage': 'classification', 'industry': d.get('industry'), 'radius_miles': d.get('radius_miles'), 'domain_verified': d.get('domain_verified'), 'is_virtual': d.get('is_virtual'), 'prompts_generated': prompt_count})}\n\n"
+                        yield f"event: progress\ndata: {json.dumps({'stage': 'classification', 'industry': d.get('industry'), 'radius_miles': d.get('radius_miles'), 'domain_verified': d.get('domain_verified'), 'is_virtual': d.get('is_virtual'), 'prompts_generated': prompt_count, 'latitude': d.get('latitude'), 'longitude': d.get('longitude'), 'google_maps_url': d.get('google_maps_url'), 'formatted_address': d.get('formatted_address')})}\n\n"
 
                         updated_req = output.get("request")
                         if updated_req and biz:
@@ -118,6 +118,13 @@ class ScanService:
                             biz.primary_state = updated_req.primary_state
                             biz.country = updated_req.country
                             biz.service_focuses = updated_req.service_focuses
+                            
+                            # Persist map coordinates and details
+                            biz.latitude = d.get("latitude")
+                            biz.longitude = d.get("longitude")
+                            biz.google_maps_url = d.get("google_maps_url")
+                            biz.formatted_address = d.get("formatted_address")
+                            
                             db.commit()
                             db.refresh(biz)
 
@@ -136,7 +143,7 @@ class ScanService:
             try:
                 active_configs = ProviderService.get_active_configs(db)
                 providers_to_query = [
-                    {"name": c.provider, "model": c.model}
+                    {"name": c.provider, "model": c.model, "display_name": c.display_name}
                     for c in active_configs
                     if c.provider != "gemini_grounding"
                 ]
@@ -146,13 +153,13 @@ class ScanService:
             if not providers_to_query:
                 providers_to_query = PROVIDER_CONFIG
 
-            yield f"event: progress\ndata: {json.dumps({'stage': 'querying_providers', 'provider_count': len(providers_to_query), 'providers': [p['name'] for p in providers_to_query], 'prompt_count': len(prompts)})}\n\n"
+            yield f"event: progress\ndata: {json.dumps({'stage': 'querying_providers', 'provider_count': len(providers_to_query), 'providers': [{'provider': p['name'], 'model': p.get('model'), 'display_name': p.get('display_name')} for p in providers_to_query], 'prompt_count': len(prompts)})}\n\n"
 
             # Resolve ALL provider configs synchronously before spawning tasks.
             # This keeps the synchronous DB lookup out of the parallel hot path so
             # it can't block the event loop mid-flight and serialize the providers.
             resolved = [
-                (cfg, ProviderService.resolve_provider_call_args(cfg["name"], db))
+                (cfg, ProviderService.resolve_provider_call_args(cfg["name"], db, model=cfg.get("model")))
                 for cfg in providers_to_query
             ]
 
@@ -193,6 +200,7 @@ class ScanService:
                     scan_id=scan.id,
                     provider=pr.provider,
                     model=pr.model,
+                    display_name=pr.display_name,
                     status=pr.status,
                     score=pr.score,
                     rank_position=pr.rank_position,
@@ -301,6 +309,8 @@ class ScanService:
         res = ScanResult(
             scan_id=data.scan_id,
             provider=data.provider,
+            model=data.model,
+            display_name=data.display_name,
             status=data.status,
             score=data.score,
             rank_position=data.rank_position,
