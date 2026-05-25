@@ -4,6 +4,7 @@ import logging
 import os
 import random
 import re
+import unicodedata
 from typing import Optional, Dict, Any, List
 
 from pydantic import BaseModel, Field
@@ -251,10 +252,9 @@ async def classify_business(state: ScanState) -> dict:
                     raise ValueError("Empty content in primary classification response")
 
                 json_match = re.search(r"\{.*\}", content, re.DOTALL)
-                if json_match:
-                    data = json.loads(json_match.group())
-                else:
-                    data = json.loads(content)
+                parsed_json = json_match.group() if json_match else content
+                from app.models.schema import BusinessClassification
+                data = BusinessClassification.model_validate_json(parsed_json).model_dump()
             except Exception as primary_err:
                 logger.warning(
                     "Primary search grounding classification failed or returned invalid JSON: %s. Retrying WITHOUT search tools...",
@@ -274,10 +274,9 @@ async def classify_business(state: ScanState) -> dict:
                     raise ValueError("Empty content in fallback classification response")
 
                 json_match = re.search(r"\{.*\}", content, re.DOTALL)
-                if json_match:
-                    data = json.loads(json_match.group())
-                else:
-                    data = json.loads(content)
+                parsed_json = json_match.group() if json_match else content
+                from app.models.schema import BusinessClassification
+                data = BusinessClassification.model_validate_json(parsed_json).model_dump()
         except Exception as grounding_err:
             logger.warning(
                 "Both primary and fallback gemini_grounding classification failed: %s. Initiating resilient LLM failover sequence...",
@@ -339,10 +338,9 @@ async def classify_business(state: ScanState) -> dict:
                         raise ValueError("Empty content in failover classification response")
 
                     json_match = re.search(r"\{.*\}", content, re.DOTALL)
-                    if json_match:
-                        data = json.loads(json_match.group())
-                    else:
-                        data = json.loads(content)
+                    parsed_json = json_match.group() if json_match else content
+                    from app.models.schema import BusinessClassification
+                    data = BusinessClassification.model_validate_json(parsed_json).model_dump()
                     
                     fallback_used = p_name
                     logger.info("Resilient grounding classification failover to provider '%s' succeeded!", p_name)
@@ -532,17 +530,146 @@ class AuditMetrics(BaseModel):
     actionable_intent: bool = Field(description="True if the AI explicitly told the user how to contact, book, or visit the businesses.")
     reasoning: str = Field(description="A brief explanation of why the client did or did not secure a top-ranked recommendation.")
 
+def normalize_text(text: str) -> str:
+    """
+    Standardize text by stripping accents/diacritics and converting to lowercase
+    for ultra-robust accent-insensitive matching.
+    """
+    if not text:
+        return ""
+    nfkd_form = unicodedata.normalize('NFKD', text)
+    return "".join([c for c in nfkd_form if not unicodedata.combining(c)]).lower()
+
+def find_brand_rank_locally(raw_ai_response: str, business_name: str, domain: str) -> Optional[int]:
+    """
+    Factually count recommendation blocks in the raw AI text response to determine
+    the precise 1-based rank position of the client brand.
+    """
+    if not raw_ai_response:
+        return None
+
+    response_norm = normalize_text(raw_ai_response)
+    
+    # Resolve target search terms (normalizing accents)
+    search_terms = set()
+    domain_norm = normalize_text(domain)
+    if domain_norm:
+        sld = domain_norm.split('.')[0]
+        search_terms.add(sld)
+        if '-' in sld:
+            search_terms.add(sld.replace('-', ' '))
+            search_terms.add(sld.replace('-', ''))
+
+    if business_name:
+        name_norm = normalize_text(business_name)
+        # Suffix stripping
+        suffix_pattern = r'\b(inc|llc|corp|corporation|ltd|co|gmbh|sa|pvt|incorporated|limited|clinic)\b\.?,?'
+        name_norm = re.sub(suffix_pattern, '', name_norm).strip()
+        name_norm = re.sub(r'^[,\.\s\-]+|[,\.\s\-]+$', '', name_norm).strip()
+        if name_norm:
+            search_terms.add(name_norm)
+
+    # 1. Inspect lines for numbered lists (e.g. "1. ", "2. ", "**1.**", "[1] ", etc.)
+    lines = raw_ai_response.split('\n')
+    numbered_items = []
+    
+    for line in lines:
+        line_clean = line.strip()
+        if not line_clean:
+            continue
+        # Match numbered list bullet points
+        match = re.match(r'^\s*(?:\*\*)?\[?(\d+)\]?(?:\.|\)|:|-)?(?:\*\*)?\s+(.*)', line_clean)
+        if match:
+            num = int(match.group(1))
+            item_text = match.group(2)
+            numbered_items.append((num, item_text))
+            
+    # Case A: Found valid numbered list markers
+    if len(numbered_items) >= 2:
+        numbered_items.sort(key=lambda x: x[0])
+        for num, text in numbered_items:
+            text_norm = normalize_text(text)
+            mentioned = False
+            if domain_norm and domain_norm in text_norm:
+                mentioned = True
+            else:
+                for term in search_terms:
+                    pattern = rf'\b{re.escape(term)}\b'
+                    if re.search(pattern, text_norm):
+                        mentioned = True
+                        break
+            if mentioned:
+                return num
+
+    # 2. Inspect double-newline separated paragraph blocks (e.g. paragraph sections containing links)
+    paragraphs = [p.strip() for p in raw_ai_response.split('\n\n') if p.strip()]
+    recommendation_blocks = []
+    for p in paragraphs:
+        p_lower = p.lower()
+        has_url = 'http://' in p or 'https://' in p or '.edu' in p_lower or '.com' in p_lower or '.org' in p_lower
+        is_bullet = p.startswith(('-', '*', '•'))
+        
+        if len(p) > 15 and (has_url or is_bullet or p.startswith('**')):
+            recommendation_blocks.append(p)
+            
+    if len(recommendation_blocks) >= 2:
+        for idx, block in enumerate(recommendation_blocks, start=1):
+            block_norm = normalize_text(block)
+            mentioned = False
+            if domain_norm and domain_norm in block_norm:
+                mentioned = True
+            else:
+                for term in search_terms:
+                    pattern = rf'\b{re.escape(term)}\b'
+                    if re.search(pattern, block_norm):
+                        mentioned = True
+                        break
+            if mentioned:
+                return idx
+
+    # 3. Fallback to simple bullet point line tracking
+    bullet_lines = []
+    for line in lines:
+        line_clean = line.strip()
+        if line_clean.startswith(('-', '*', '•')):
+            bullet_lines.append(line_clean)
+            
+    if len(bullet_lines) >= 2:
+        for idx, line in enumerate(bullet_lines, start=1):
+            line_norm = normalize_text(line)
+            mentioned = False
+            if domain_norm and domain_norm in line_norm:
+                mentioned = True
+            else:
+                for term in search_terms:
+                    pattern = rf'\b{re.escape(term)}\b'
+                    if re.search(pattern, line_norm):
+                        mentioned = True
+                        break
+            if mentioned:
+                return idx
+
+    return None
+
 def is_brand_mentioned(raw_ai_response: str, business_name: str, domain: str) -> bool:
     """
-    Highly robust, modern multi-tier brand mention checker for GEO audits.
+    Highly robust, modern multi-tier diacritic-insensitive brand mention checker for GEO audits.
     """
     from urllib.parse import urlparse
 
+    if not raw_ai_response:
+        return False
+
     response_lower = raw_ai_response.lower()
+    response_norm = normalize_text(raw_ai_response)
     
     # ─── TIER 1: CHECK DOMAIN AND URLS ────────────────────────────────────────
     domain_lower = domain.lower().strip() if domain else ""
+    domain_norm = normalize_text(domain)
+    
     if domain_lower and domain_lower in response_lower:
+        return True
+    if domain_norm and domain_norm in response_norm:
         return True
         
     # Extract hostnames/domains mentioned in the text (e.g., in markdown links or URLs)
@@ -552,8 +679,10 @@ def is_brand_mentioned(raw_ai_response: str, business_name: str, domain: str) ->
         full_url = url if url.startswith(('http://', 'https://')) else f"https://{url}"
         try:
             hostname = urlparse(full_url).hostname
-            if hostname and (hostname == domain_lower or hostname.endswith(f".{domain_lower}")):
-                return True
+            if hostname:
+                hostname_norm = normalize_text(hostname)
+                if hostname_norm == domain_norm or hostname_norm.endswith(f".{domain_norm}"):
+                    return True
         except Exception:
             continue
 
@@ -561,33 +690,31 @@ def is_brand_mentioned(raw_ai_response: str, business_name: str, domain: str) ->
     search_terms = set()
     
     # Extract Second-Level Domain (SLD) (e.g., 'databricks' from 'databricks.com')
-    if domain_lower:
-        sld = domain_lower.split('.')[0]
+    if domain_norm:
+        sld = domain_norm.split('.')[0]
         search_terms.add(sld)
-        # Handle hyphenated domains (e.g., 'urban-smiles' -> check both 'urban-smiles' and 'urban smiles')
         if '-' in sld:
             search_terms.add(sld.replace('-', ' '))
             search_terms.add(sld.replace('-', ''))
 
     # Clean the official business name
     if business_name:
-        name_clean = business_name.lower().strip()
+        name_norm = normalize_text(business_name)
         # Remove common corporate suffixes with word boundaries
         suffix_pattern = r'\b(inc|llc|corp|corporation|ltd|co|gmbh|sa|pvt|incorporated|limited|clinic)\b\.?,?'
-        name_clean = re.sub(suffix_pattern, '', name_clean).strip()
+        name_norm = re.sub(suffix_pattern, '', name_norm).strip()
         # Strip trailing/leading punctuation
-        name_clean = re.sub(r'^[,\.\s\-]+|[,\.\s\-]+$', '', name_clean).strip()
+        name_norm = re.sub(r'^[,\.\s\-]+|[,\.\s\-]+$', '', name_norm).strip()
         
-        if name_clean:
-            search_terms.add(name_clean)
+        if name_norm:
+            search_terms.add(name_norm)
 
     # ─── TIER 3: WORD BOUNDARY MATCHING ──────────────────────────────────────
     for term in search_terms:
         # Escape term for safe regex evaluation
         escaped_term = re.escape(term)
-        # Use word boundaries to prevent substring collisions (e.g. "C3" matching "C3 AI" but not "c3p0")
         pattern = rf'\b{escaped_term}\b'
-        if re.search(pattern, response_lower):
+        if re.search(pattern, response_norm):
             return True
 
     return False
@@ -657,7 +784,17 @@ async def evaluate_ai_response(
         )
         
         raw_content = response.choices[0].message.content or "{}"
-        metrics = json.loads(raw_content)
+        metrics_obj = AuditMetrics.model_validate_json(raw_content)
+        metrics = metrics_obj.model_dump()
+        
+        # Override with highly robust local rank parsing to prevent LLM counting/drift hallucinations
+        local_rank = find_brand_rank_locally(raw_ai_response, business_name, domain)
+        if local_rank is not None:
+            logger.info("Overriding judge true_rank_position %s with factually parsed local_rank %d", metrics.get("true_rank_position"), local_rank)
+            metrics["true_rank_position"] = local_rank
+            if not metrics.get("client_mentioned"):
+                logger.info("Factual local mention checker verified presence; forcing client_mentioned = True")
+                metrics["client_mentioned"] = True
         
         # ─── CALCULATE TRUE VALUE METRIC SCORE ───
         score = 0
@@ -970,6 +1107,7 @@ async def query_single_provider(
             provider=provider_name,
             model=model,
             display_name=provider_cfg.get("display_name"),
+            config_id=provider_cfg.get("id"),
             status=best["status"],
             score=best["score"],
             rank_position=best["rank_position"],
@@ -987,6 +1125,7 @@ async def query_single_provider(
             provider=provider_name,
             model=model,
             display_name=provider_cfg.get("display_name"),
+            config_id=provider_cfg.get("id"),
             status="red",
             score=0,
             mentioned=False,
@@ -1007,18 +1146,24 @@ async def query_providers(state: ScanState) -> dict:
     try:
         active_configs = ProviderService.get_active_configs(db)
         providers_to_query = [
-            {"name": c.provider, "model": c.model, "display_name": c.display_name}
+            {"name": c.provider, "model": c.model, "display_name": c.display_name, "id": str(c.id)}
             for c in active_configs
             if c.provider != "gemini_grounding"
         ]
     except Exception as e:
         logger.error("Failed to dynamically load active providers from DB: %s. Falling back to static config.", e)
-        providers_to_query = PROVIDER_CONFIG
+        providers_to_query = [
+            {"name": p["name"], "model": p.get("model"), "display_name": p.get("display_name"), "id": f"static-{p['name']}"}
+            for p in PROVIDER_CONFIG
+        ]
     finally:
         db.close()
 
     if not providers_to_query:
-        providers_to_query = PROVIDER_CONFIG
+        providers_to_query = [
+            {"name": p["name"], "model": p.get("model"), "display_name": p.get("display_name"), "id": f"static-{p['name']}"}
+            for p in PROVIDER_CONFIG
+        ]
 
     logger.info(
         "Entering query_providers - Domain: '%s', Business: '%s', Total Prompts: %d, Providers: %d → Total API calls: %d",

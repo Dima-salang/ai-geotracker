@@ -28,6 +28,7 @@ class ProviderResult(BaseModel):
     provider: str
     model: Optional[str] = None
     display_name: Optional[str] = None
+    config_id: Optional[str] = None
     status: str = "red"
     score: int = 0
     rank_position: Optional[int] = None
