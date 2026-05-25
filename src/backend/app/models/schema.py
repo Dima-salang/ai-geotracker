@@ -1,12 +1,26 @@
 import uuid
 from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
+from enum import Enum
 
 from pydantic import BaseModel, Field, ConfigDict
 from sqlalchemy import Column, String, Integer, Boolean, DateTime, JSON, ForeignKey, Uuid
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 
 from app.models.database import Base
+
+
+# ==========================================
+# ENUMS & CONSTANTS
+# ==========================================
+
+class UserRole(str, Enum):
+    USER = "user"
+    CLIENT = "client"
+    AGENT = "agent"
+    TEAM_LEADER = "team_leader"
+    ADMIN = "admin"
+
 
 
 # ==========================================
@@ -34,6 +48,7 @@ class User(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     organization_id: Mapped[Optional[uuid.UUID]] = mapped_column(Uuid, ForeignKey("organizations.id"), nullable=True)
+    team_id: Mapped[Optional[uuid.UUID]] = mapped_column(Uuid, ForeignKey("teams.id", use_alter=True, name="fk_users_team_id"), nullable=True)
     role: Mapped[str] = mapped_column(String, default="user")
     first_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     last_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
@@ -41,11 +56,57 @@ class User(Base):
     email: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     auth_provider: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     tier: Mapped[str] = mapped_column(String, default="free")
+    is_verified: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     last_scan_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     organization: Mapped[Optional["Organization"]] = relationship("Organization", back_populates="users")
+    team: Mapped[Optional["Team"]] = relationship("Team", foreign_keys=[team_id], back_populates="members")
     scans: Mapped[List["Scan"]] = relationship("Scan", back_populates="user", cascade="all, delete-orphan")
+    assigned_leads: Mapped[List["Lead"]] = relationship("Lead", foreign_keys="[Lead.assigned_agent_id]", back_populates="assigned_agent")
+
+
+class Team(Base):
+    __tablename__ = "teams"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    leader_id: Mapped[Optional[uuid.UUID]] = mapped_column(Uuid, ForeignKey("users.id", use_alter=True, name="fk_teams_leader_id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    leader: Mapped[Optional["User"]] = relationship("User", foreign_keys=[leader_id], post_update=True)
+    members: Mapped[List["User"]] = relationship("User", foreign_keys="[User.team_id]", back_populates="team")
+    leads: Mapped[List["Lead"]] = relationship("Lead", back_populates="team", cascade="all, delete-orphan")
+
+
+class Lead(Base):
+    __tablename__ = "leads"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    business_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("businesses.id"), nullable=False)
+    team_id: Mapped[Optional[uuid.UUID]] = mapped_column(Uuid, ForeignKey("teams.id"), nullable=True)
+    assigned_agent_id: Mapped[Optional[uuid.UUID]] = mapped_column(Uuid, ForeignKey("users.id"), nullable=True)
+    visibility_score: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String, default="new")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    business: Mapped["Business"] = relationship("Business")
+    team: Mapped[Optional["Team"]] = relationship("Team", back_populates="leads")
+    assigned_agent: Mapped[Optional["User"]] = relationship("User", foreign_keys=[assigned_agent_id], back_populates="assigned_leads")
+
+
+class InAppNotification(Base):
+    __tablename__ = "in_app_notifications"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), nullable=False)
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    message: Mapped[str] = mapped_column(String, nullable=False)
+    is_read: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    user: Mapped["User"] = relationship("User")
+
 
 
 class Business(Base):
@@ -220,6 +281,10 @@ class UserBase(BaseModel):
     auth_provider: Optional[str] = None
     tier: str = "free"
     organization_id: Optional[uuid.UUID] = None
+    role: UserRole = UserRole.USER
+    team_id: Optional[uuid.UUID] = None
+    is_verified: bool = True
+
 
 
 class UserCreate(UserBase):
@@ -343,6 +408,11 @@ class UserUpdate(BaseModel):
     phone: Optional[str] = None
     email: Optional[str] = None
     tier: Optional[str] = None
+    organization_id: Optional[uuid.UUID] = None
+    role: Optional[UserRole] = None
+    team_id: Optional[uuid.UUID] = None
+    is_verified: Optional[bool] = None
+
 
 
 class BusinessUpdate(BaseModel):
@@ -412,4 +482,98 @@ class EngagementEventRead(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# ==========================================
+# TEAMS, LEADS, AND NOTIFICATIONS SCHEMAS
+# ==========================================
+
+class TeamBase(BaseModel):
+    name: str
+    leader_id: Optional[uuid.UUID] = None
+
+
+class TeamCreate(TeamBase):
+    pass
+
+
+class TeamUpdate(BaseModel):
+    name: Optional[str] = None
+    leader_id: Optional[uuid.UUID] = None
+
+
+class AgentRegistration(BaseModel):
+    first_name: str
+    last_name: str
+    phone: Optional[str] = None
+    team_id: uuid.UUID
+
+
+class TeamRead(TeamBase):
+    id: uuid.UUID
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class LeadBase(BaseModel):
+    business_id: uuid.UUID
+    team_id: Optional[uuid.UUID] = None
+    assigned_agent_id: Optional[uuid.UUID] = None
+    visibility_score: int = 0
+    status: str = "new"
+
+
+class LeadCreate(LeadBase):
+    pass
+
+
+class LeadRead(LeadBase):
+    id: uuid.UUID
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class LeadUpdate(BaseModel):
+    team_id: Optional[uuid.UUID] = None
+    assigned_agent_id: Optional[uuid.UUID] = None
+    status: Optional[str] = None
+
+
+class InAppNotificationBase(BaseModel):
+    user_id: uuid.UUID
+    title: str
+    message: str
+    is_read: bool = False
+
+
+class InAppNotificationCreate(InAppNotificationBase):
+    pass
+
+
+class InAppNotificationRead(InAppNotificationBase):
+    id: uuid.UUID
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class BusinessClassification(BaseModel):
+    business_name: str = Field(default="", description="Verified operational name of business")
+    industry: str = Field(default="", description="Refined industry category")
+    primary_city: str = Field(default="", description="Main physical city")
+    primary_state: str = Field(default="", description="Main physical state/region")
+    country: str = Field(default="", description="Main physical country")
+    is_virtual: bool = Field(default=False, description="Whether the business is purely virtual")
+    domain_verified: bool = Field(default=False, description="Whether the domain is verified")
+    radius_miles: int = Field(default=25, description="Search footprint index: radius of miles")
+    default_services: List[str] = Field(default_factory=list, description="Array of exactly 2-4 core structural services/offerings")
+    business_alias: str = Field(default="", description="Alternative name or empty")
+    latitude: Optional[float] = Field(default=None, description="Latitude of physical location")
+    longitude: Optional[float] = Field(default=None, description="Longitude of physical location")
+    formatted_address: Optional[str] = Field(default=None, description="Street address, City, State, ZIP, Country")
+    google_maps_url: Optional[str] = Field(default=None, description="Google Maps search URL")
+    prompts: List[str] = Field(default_factory=list, description="Generated search prompts")
+
 
