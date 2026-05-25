@@ -37,7 +37,8 @@ export default function AdminProviders() {
   const [savingSystemStates, setSavingSystemStates] = useState<SavingStates>({});
 
   // Local form state for API keys to allow editing
-  const [apiKeys, setApiKeys] = useState<{ [key: string]: string }>({});
+  const [providerKeyLists, setProviderKeyLists] = useState<{ [configId: string]: string[] }>({});
+  const [showKeyMap, setShowKeyMap] = useState<{ [key: string]: boolean }>({});
   const [systemKeys, setSystemKeys] = useState<{ [key: string]: string }>({});
 
   // State for the Create Platform form
@@ -46,7 +47,64 @@ export default function AdminProviders() {
   const [newDisplayName, setNewDisplayName] = useState("");
   const [newApiBase, setNewApiBase] = useState("");
   const [newTimeout, setNewTimeout] = useState(15);
-  const [newApiKey, setNewApiKey] = useState("");
+  const [newApiKeysList, setNewApiKeysList] = useState<string[]>([""]);
+
+  const handleKeyListItemChange = (configId: string, index: number, value: string) => {
+    setProviderKeyLists((prev) => {
+      const list = [...(prev[configId] || [""])];
+      list[index] = value;
+      return { ...prev, [configId]: list };
+    });
+  };
+
+  const handleAddKeyField = (configId: string) => {
+    setProviderKeyLists((prev) => {
+      const list = [...(prev[configId] || [])];
+      list.push("");
+      return { ...prev, [configId]: list };
+    });
+  };
+
+  const handleRemoveKeyField = (configId: string, index: number) => {
+    setProviderKeyLists((prev) => {
+      let list = [...(prev[configId] || [])];
+      if (list.length > 1) {
+        list.splice(index, 1);
+      } else {
+        list = [""];
+      }
+      return { ...prev, [configId]: list };
+    });
+  };
+
+  const toggleKeyVisibility = (configId: string, index: number) => {
+    const key = `${configId}_${index}`;
+    setShowKeyMap((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const handleNewKeyChange = (index: number, value: string) => {
+    setNewApiKeysList((prev) => {
+      const list = [...prev];
+      list[index] = value;
+      return list;
+    });
+  };
+
+  const handleAddNewKeyField = () => {
+    setNewApiKeysList((prev) => [...prev, ""]);
+  };
+
+  const handleRemoveNewKeyField = (index: number) => {
+    setNewApiKeysList((prev) => {
+      let list = [...prev];
+      if (list.length > 1) {
+        list.splice(index, 1);
+      } else {
+        list = [""];
+      }
+      return list;
+    });
+  };
   const [newIsActive, setNewIsActive] = useState(true);
   const [creating, setCreating] = useState(false);
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -86,6 +144,8 @@ export default function AdminProviders() {
     setCreating(true);
     addLog(`CREATE: Registering custom AI Platform [${newProvider.toUpperCase()}]...`);
 
+    const api_key = newApiKeysList.join(",");
+
     try {
       const response = await fetch(`${BACKEND_URL}/api/v1/providers`, {
         method: "POST",
@@ -99,7 +159,7 @@ export default function AdminProviders() {
           api_base: newApiBase.trim() || null,
           is_active: newIsActive,
           timeout_seconds: Number(newTimeout),
-          api_key: newApiKey,
+          api_key: api_key,
         }),
       });
 
@@ -116,7 +176,7 @@ export default function AdminProviders() {
       setNewDisplayName("");
       setNewApiBase("");
       setNewTimeout(15);
-      setNewApiKey("");
+      setNewApiKeysList([""]);
       setNewIsActive(true);
       setShowCreateForm(false);
 
@@ -171,12 +231,17 @@ export default function AdminProviders() {
       const data: ProviderConfig[] = await response.json();
       setConfigs(data);
 
-      // Initialize API keys to "__NO_CHANGE__" for platforms that have a key
-      const keysMap: { [key: string]: string } = {};
+      // Initialize multi-keys per platform
+      const listsMap: { [key: string]: string[] } = {};
       data.forEach((c) => {
-        keysMap[c.id] = c.has_key ? "__NO_CHANGE__" : "";
+        const count = (c as any).key_count || (c.has_key ? 1 : 0);
+        if (c.has_key) {
+          listsMap[c.id] = count > 0 ? Array(count).fill("__NO_CHANGE__") : ["__NO_CHANGE__"];
+        } else {
+          listsMap[c.id] = [""];
+        }
       });
-      setApiKeys(keysMap);
+      setProviderKeyLists(listsMap);
 
       // 2. Fetch System Configurations
       const sysResponse = await fetch(`${BACKEND_URL}/api/v1/configs`);
@@ -222,11 +287,6 @@ export default function AdminProviders() {
     );
   };
 
-  // Update API key field locally
-  const handleApiKeyChange = (id: string, value: string) => {
-    setApiKeys((prev) => ({ ...prev, [id]: value }));
-  };
-
   // Save a single platform's config
   const handleSaveConfig = async (id: string) => {
     const config = configs.find((c) => c.id === id);
@@ -235,7 +295,8 @@ export default function AdminProviders() {
     setSavingStates((prev) => ({ ...prev, [id]: true }));
     addLog(`SAVE: Initiating synchronization for AI Platform [${config.provider.toUpperCase()} (${config.model})]...`);
 
-    const apiKeyVal = apiKeys[id] || "";
+    const keys = providerKeyLists[id] || [""];
+    const api_key = keys.join(",");
 
     try {
       const response = await fetch(`${BACKEND_URL}/api/v1/providers`, {
@@ -251,7 +312,7 @@ export default function AdminProviders() {
           api_base: config.api_base || null,
           is_active: config.is_active,
           timeout_seconds: Number(config.timeout_seconds),
-          api_key: apiKeyVal,
+          api_key: api_key,
         }),
       });
 
@@ -262,7 +323,7 @@ export default function AdminProviders() {
       const updated = await response.json();
 
       addLog(`[SUCCESS] SYNC: Platform [${config.provider.toUpperCase()} (${config.model})] successfully saved.`);
-      addLog(`SYNC: Model = "${updated.model}", Active = ${updated.is_active ? "TRUE" : "FALSE"}, Key Saved = ${updated.has_key ? "YES" : "NO"}`);
+      addLog(`SYNC: Model = "${updated.model}", Active = ${updated.is_active ? "TRUE" : "FALSE"}, Key Count = ${updated.key_count || 0}`);
 
       // Update config fields including display name and has_key state
       setConfigs((prev) =>
@@ -277,13 +338,62 @@ export default function AdminProviders() {
         } : c))
       );
       if (updated.has_key) {
-        setApiKeys((prev) => ({ ...prev, [id]: "__NO_CHANGE__" }));
+        const count = updated.key_count || 1;
+        setProviderKeyLists((prev) => ({ ...prev, [id]: Array(count).fill("__NO_CHANGE__") }));
       }
     } catch (err: any) {
       console.error(err);
       addLog(`[ERROR] SYNC_FAIL: Save failed for [${config.provider.toUpperCase()}]: ${err.message}`);
     } finally {
       setSavingStates((prev) => ({ ...prev, [id]: false }));
+    }
+  };
+
+  // Instant DB Toggle Active State
+  const handleInstantToggleActive = async (id: string, nextStatus: boolean) => {
+    const config = configs.find((c) => c.id === id);
+    if (!config) return;
+
+    // Snappy UI state response
+    setConfigs((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, is_active: nextStatus } : c))
+    );
+    addLog(`TOGGLE: Toggling ${config.provider.toUpperCase()} active state to ${nextStatus ? "ENABLED" : "DISABLED"}...`);
+
+    const keys = providerKeyLists[id] || [""];
+    const api_key = keys.join(",");
+
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/v1/providers`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id: config.id,
+          provider: config.provider,
+          model: config.model,
+          display_name: config.display_name || null,
+          api_base: config.api_base || null,
+          is_active: nextStatus,
+          timeout_seconds: Number(config.timeout_seconds),
+          api_key: api_key,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error ${response.status}`);
+      }
+
+      const updated = await response.json();
+      addLog(`[SUCCESS] TOGGLE: ${config.provider.toUpperCase()} status persisted immediately to DB.`);
+    } catch (err: any) {
+      console.error(err);
+      addLog(`[ERROR] TOGGLE_FAIL: Failed to persist active status for ${config.provider.toUpperCase()}. Reverting state...`);
+      // Revert React UI state if persistence fails
+      setConfigs((prev) =>
+        prev.map((c) => (c.id === id ? { ...c, is_active: !nextStatus } : c))
+      );
     }
   };
 
@@ -609,7 +719,6 @@ export default function AdminProviders() {
                 {configs.map((config) => {
                   const details = getPlatformDetails(config.provider);
                   const isSaving = savingStates[config.id] || false;
-                  const apiKeyVal = apiKeys[config.id] || "";
                   const hasSavedKey = config.has_key;
 
                   return (
@@ -636,7 +745,7 @@ export default function AdminProviders() {
 
                         {/* Active Status Switch */}
                         <button
-                          onClick={() => handleFieldChange(config.id, "is_active", !config.is_active)}
+                          onClick={() => handleInstantToggleActive(config.id, !config.is_active)}
                           className={`font-mono text-[10px] font-bold px-3 py-1.5 border transition-all uppercase ${config.is_active
                               ? "bg-emerald-600 border-emerald-600 text-white"
                               : "bg-transparent border-foreground/20 text-text-muted hover:border-foreground"
@@ -690,42 +799,79 @@ export default function AdminProviders() {
                           />
                         </div>
 
-                        {/* Search Limit & Access Credentials */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                          {/* Search Limit */}
-                          <div>
-                            <label className="font-mono text-[10px] text-text-muted uppercase block mb-1.5 font-bold tracking-wider">
-                              Search Limit (Seconds)
-                            </label>
-                            <input
-                              type="number"
-                              value={config.timeout_seconds}
-                              onChange={(e) => handleFieldChange(config.id, "timeout_seconds", e.target.value)}
-                              className="w-full bg-transparent border-b border-foreground/20 focus:border-primary focus:outline-none font-mono text-xs py-2 text-foreground"
-                              min={1}
-                              max={120}
-                            />
-                          </div>
+                        {/* Search Limit */}
+                        <div>
+                          <label className="font-mono text-[10px] text-text-muted uppercase block mb-1.5 font-bold tracking-wider">
+                            Search Limit (Seconds)
+                          </label>
+                          <input
+                            type="number"
+                            value={config.timeout_seconds}
+                            onChange={(e) => handleFieldChange(config.id, "timeout_seconds", e.target.value)}
+                            className="w-full bg-transparent border-b border-foreground/20 focus:border-primary focus:outline-none font-mono text-xs py-2 text-foreground"
+                            min={1}
+                            max={120}
+                          />
+                        </div>
 
-                          {/* Access Credentials */}
-                          <div>
-                            <label className="font-mono text-[10px] text-text-muted uppercase block mb-1.5 font-bold tracking-wider">
-                              Access Key / Credentials
+                        {/* Access Credentials */}
+                        <div className="space-y-4">
+                          <div className="flex justify-between items-center border-b border-foreground/10 pb-2">
+                            <label className="font-mono text-[10px] text-text-muted uppercase block font-bold tracking-wider">
+                              Access Keys / API Credentials
                             </label>
-                            <div className="relative">
-                              <input
-                                type="password"
-                                value={apiKeyVal}
-                                onChange={(e) => handleApiKeyChange(config.id, e.target.value)}
-                                className="w-full bg-transparent border-b border-foreground/20 focus:border-primary focus:outline-none font-mono text-xs py-2 text-foreground"
-                                placeholder={hasSavedKey ? "••••••••••••••••" : "Empty Access Key"}
-                              />
-                              {hasSavedKey && apiKeyVal === "__NO_CHANGE__" && (
-                                <span className="absolute right-0 top-2 font-mono text-[8px] bg-primary/10 text-primary border border-primary/20 px-1 py-0.5 uppercase font-bold tracking-tighter">
-                                  SECURED
-                                </span>
-                              )}
-                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleAddKeyField(config.id)}
+                              className="font-mono text-[9px] text-primary hover:text-primary-hover uppercase font-bold tracking-tighter flex items-center gap-1 border border-primary/20 bg-primary/5 px-2 py-1 select-none"
+                            >
+                              + Add Key Field
+                            </button>
+                          </div>
+                          
+                          <div className="space-y-3">
+                            {(providerKeyLists[config.id] || [""]).map((keyItem, idx) => {
+                              const isSecured = hasSavedKey && keyItem === "__NO_CHANGE__";
+                              const isVisible = showKeyMap[`${config.id}_${idx}`] || false;
+                              return (
+                                <div key={idx} className="flex items-center gap-3">
+                                  <span className="font-mono text-[10px] text-text-muted w-4 text-right select-none">
+                                    #{idx + 1}
+                                  </span>
+                                  <div className="relative flex-grow">
+                                    <input
+                                      type={isVisible ? "text" : "password"}
+                                      value={keyItem}
+                                      onChange={(e) => handleKeyListItemChange(config.id, idx, e.target.value)}
+                                      className="w-full bg-transparent border-b border-foreground/20 focus:border-primary focus:outline-none font-mono text-xs py-2 pr-20 text-foreground font-bold"
+                                      placeholder={isSecured ? "••••••••••••••••" : "Empty Access Key"}
+                                    />
+                                    <div className="absolute right-0 top-1.5 flex items-center gap-2">
+                                      {isSecured && (
+                                        <span className="font-mono text-[8px] bg-primary/10 text-primary border border-primary/20 px-1 py-0.5 uppercase font-bold tracking-tighter select-none">
+                                          SECURED
+                                        </span>
+                                      )}
+                                      <button
+                                        type="button"
+                                        onClick={() => toggleKeyVisibility(config.id, idx)}
+                                        className="text-text-muted hover:text-foreground font-mono text-[9px] uppercase p-1 select-none font-bold tracking-tighter"
+                                        title={isVisible ? "Hide API Key" : "Show API Key"}
+                                      >
+                                        [{isVisible ? "HIDE" : "SHOW"}]
+                                      </button>
+                                    </div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveKeyField(config.id, idx)}
+                                    className="font-mono text-[10px] text-rose-600 hover:text-rose-800 uppercase font-bold border border-rose-600/20 bg-rose-600/5 px-2.5 py-1 select-none"
+                                  >
+                                    ✗
+                                  </button>
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
                       </div>
@@ -883,34 +1029,73 @@ export default function AdminProviders() {
                         />
                       </div>
 
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        {/* Timeout */}
-                        <div>
-                          <label className="font-mono text-[10px] text-text-muted uppercase block mb-1.5 font-bold tracking-wider">
-                            Timeout (Seconds)
-                          </label>
-                          <input
-                            type="number"
-                            value={newTimeout}
-                            onChange={(e) => setNewTimeout(Number(e.target.value))}
-                            className="w-full bg-transparent border-b border-foreground/20 focus:border-primary focus:outline-none font-mono text-xs py-2 text-foreground"
-                            min={1}
-                            max={120}
-                          />
-                        </div>
+                      {/* Timeout */}
+                      <div>
+                        <label className="font-mono text-[10px] text-text-muted uppercase block mb-1.5 font-bold tracking-wider">
+                          Timeout (Seconds)
+                        </label>
+                        <input
+                          type="number"
+                          value={newTimeout}
+                          onChange={(e) => setNewTimeout(Number(e.target.value))}
+                          className="w-full bg-transparent border-b border-foreground/20 focus:border-primary focus:outline-none font-mono text-xs py-2 text-foreground"
+                          min={1}
+                          max={120}
+                        />
+                      </div>
 
-                        {/* API Key */}
-                        <div className="md:col-span-2">
-                          <label className="font-mono text-[10px] text-text-muted uppercase block mb-1.5 font-bold tracking-wider">
-                            Access Key / API Credentials
+                      {/* Access Credentials */}
+                      <div className="space-y-4">
+                        <div className="flex justify-between items-center border-b border-foreground/10 pb-2">
+                          <label className="font-mono text-[10px] text-text-muted uppercase block font-bold tracking-wider">
+                            Access Keys / API Credentials
                           </label>
-                          <input
-                            type="password"
-                            value={newApiKey}
-                            onChange={(e) => setNewApiKey(e.target.value)}
-                            className="w-full bg-transparent border-b border-foreground/20 focus:border-primary focus:outline-none font-mono text-xs py-2 text-foreground"
-                            placeholder="sk-..."
-                          />
+                          <button
+                            type="button"
+                            onClick={handleAddNewKeyField}
+                            className="font-mono text-[9px] text-primary hover:text-primary-hover uppercase font-bold tracking-tighter flex items-center gap-1 border border-primary/20 bg-primary/5 px-2 py-1 select-none"
+                          >
+                            + Add Key Field
+                          </button>
+                        </div>
+                        
+                        <div className="space-y-3">
+                          {newApiKeysList.map((keyItem, idx) => {
+                            const isVisible = showKeyMap[`new_${idx}`] || false;
+                            return (
+                              <div key={idx} className="flex items-center gap-3">
+                                <span className="font-mono text-[10px] text-text-muted w-4 text-right select-none">
+                                  #{idx + 1}
+                                </span>
+                                <div className="relative flex-grow">
+                                  <input
+                                    type={isVisible ? "text" : "password"}
+                                    value={keyItem}
+                                    onChange={(e) => handleNewKeyChange(idx, e.target.value)}
+                                    className="w-full bg-transparent border-b border-foreground/20 focus:border-primary focus:outline-none font-mono text-xs py-2 pr-12 text-foreground font-bold"
+                                    placeholder="Enter API Key"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const key = `new_${idx}`;
+                                      setShowKeyMap((prev) => ({ ...prev, [key]: !prev[key] }));
+                                    }}
+                                    className="absolute right-0 top-1.5 text-text-muted hover:text-foreground font-mono text-[9px] uppercase p-1 select-none font-bold tracking-tighter"
+                                  >
+                                    [{isVisible ? "HIDE" : "SHOW"}]
+                                  </button>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveNewKeyField(idx)}
+                                  className="font-mono text-[10px] text-rose-600 hover:text-rose-800 uppercase font-bold border border-rose-600/20 bg-rose-600/5 px-2.5 py-1 select-none"
+                                >
+                                  ✗
+                                </button>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
 
