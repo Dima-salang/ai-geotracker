@@ -54,38 +54,24 @@ export default function OperatorHub() {
 
   const fetchStats = async () => {
     setLoading(true);
-    addLog("SYNC: Syncing operator stats...");
+    addLog("SYNC: Fetching central stats aggregator...");
     
     try {
-      const endpoints = ["providers", "users", "organizations", "businesses", "scans", "scan_results", "teams", "leads"];
-      const [provRes, userRes, orgRes, bizRes, scanRes, resRes, teamRes, leadRes] = await Promise.all(
-        endpoints.map(ep => fetch(`${BACKEND_URL}/api/v1/${ep}`))
-      );
-
-      if (!provRes.ok || !userRes.ok || !orgRes.ok || !bizRes.ok || !scanRes.ok || !resRes.ok || !teamRes.ok || !leadRes.ok) {
-        throw new Error("One or more backend data channels returned an error");
+      const res = await fetch(`${BACKEND_URL}/api/v1/admin/stats`);
+      if (!res.ok) {
+        throw new Error("Stats service returned an error");
       }
-
-      const [provs, users, orgs, bizs, scans, results, teams, leads] = await Promise.all([
-        provRes.json(),
-        userRes.json(),
-        orgRes.json(),
-        bizRes.json(),
-        scanRes.json(),
-        resRes.json(),
-        teamRes.json(),
-        leadRes.json()
-      ]);
+      const data = await res.json();
 
       setStats({
-        providers: provs.length || 0,
-        users: users.length || 0,
-        organizations: orgs.length || 0,
-        businesses: bizs.length || 0,
-        scans: scans.length || 0,
-        results: results.length || 0,
-        teams: teams.length || 0,
-        leads: leads.length || 0,
+        providers: data.providers || 0,
+        users: data.users || 0,
+        organizations: data.organizations || 0,
+        businesses: data.businesses || 0,
+        scans: data.scans || 0,
+        results: data.results || 0,
+        teams: data.teams || 0,
+        leads: data.leads || 0,
       });
 
       // Fetch Observability Telemetry
@@ -98,12 +84,12 @@ export default function OperatorHub() {
         addLog("[WARNING] OBSERVABILITY: Failed to load system performance metrics.");
       }
 
-      addLog(`STATS: Channels synchronized. Providers:${provs.length} Users:${users.length} Orgs:${orgs.length} Businesses:${bizs.length} Scans:${scans.length} Results:${results.length} Teams:${teams.length} Leads:${leads.length}`);
+      addLog(`STATS: Dashboard metrics synchronized. Total Scans: ${data.scans}, Total Citations: ${data.results}`);
       addLog("DASHBOARD: Operator Dashboard fully operational.");
     } catch (err: any) {
       console.error(err);
-      setErrorMsg("Failed to sync backend operator data.");
-      addLog(`[ERROR] DASHBOARD_FAIL: Channel synchronization failed. ${err.message}`);
+      setErrorMsg("Failed to sync backend operator stats.");
+      addLog(`[ERROR] DASHBOARD_FAIL: Aggregator synchronization failed. ${err.message}`);
     } finally {
       setLoading(false);
     }

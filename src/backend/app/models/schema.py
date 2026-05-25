@@ -47,13 +47,13 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    organization_id: Mapped[Optional[uuid.UUID]] = mapped_column(Uuid, ForeignKey("organizations.id"), nullable=True)
+    organization_id: Mapped[Optional[uuid.UUID]] = mapped_column(Uuid, ForeignKey("organizations.id"), nullable=True, index=True)
     team_id: Mapped[Optional[uuid.UUID]] = mapped_column(Uuid, ForeignKey("teams.id", use_alter=True, name="fk_users_team_id"), nullable=True)
     role: Mapped[str] = mapped_column(String, default="user")
     first_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     last_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     phone: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    email: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    email: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)
     auth_provider: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     tier: Mapped[str] = mapped_column(String, default="free")
     is_verified: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -83,9 +83,9 @@ class Lead(Base):
     __tablename__ = "leads"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    business_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("businesses.id"), nullable=False)
-    team_id: Mapped[Optional[uuid.UUID]] = mapped_column(Uuid, ForeignKey("teams.id"), nullable=True)
-    assigned_agent_id: Mapped[Optional[uuid.UUID]] = mapped_column(Uuid, ForeignKey("users.id"), nullable=True)
+    business_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("businesses.id"), nullable=False, index=True)
+    team_id: Mapped[Optional[uuid.UUID]] = mapped_column(Uuid, ForeignKey("teams.id"), nullable=True, index=True)
+    assigned_agent_id: Mapped[Optional[uuid.UUID]] = mapped_column(Uuid, ForeignKey("users.id"), nullable=True, index=True)
     visibility_score: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str] = mapped_column(String, default="new")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
@@ -113,9 +113,9 @@ class Business(Base):
     __tablename__ = "businesses"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    organization_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("organizations.id"), nullable=False)
+    organization_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("organizations.id"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String, nullable=False)
-    domain: Mapped[str] = mapped_column(String, nullable=False)
+    domain: Mapped[str] = mapped_column(String, nullable=False, index=True)
     industry: Mapped[str] = mapped_column(String, nullable=False)
     primary_city: Mapped[str] = mapped_column(String, nullable=False)
     primary_state: Mapped[str] = mapped_column(String, nullable=False)
@@ -141,8 +141,8 @@ class Scan(Base):
     __tablename__ = "scans"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    business_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("businesses.id"), nullable=False)
-    user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), nullable=False)
+    business_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("businesses.id"), nullable=False, index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), nullable=False, index=True)
     overall_score: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(String, default="pending")
     summary: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
@@ -160,7 +160,7 @@ class ScanResult(Base):
     __tablename__ = "scan_results"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    scan_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("scans.id"), nullable=False)
+    scan_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("scans.id"), nullable=False, index=True)
     provider: Mapped[str] = mapped_column(String, nullable=False)
     model: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     display_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
@@ -186,8 +186,8 @@ class ScanTelemetry(Base):
     __tablename__ = "scan_telemetries"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    scan_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("scans.id"), nullable=False)
-    scan_result_id: Mapped[Optional[uuid.UUID]] = mapped_column(Uuid, ForeignKey("scan_results.id"), nullable=True)
+    scan_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("scans.id"), nullable=False, index=True)
+    scan_result_id: Mapped[Optional[uuid.UUID]] = mapped_column(Uuid, ForeignKey("scan_results.id"), nullable=True, index=True)
     provider: Mapped[str] = mapped_column(String, nullable=False)
     model: Mapped[str] = mapped_column(String, nullable=False)
     display_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)

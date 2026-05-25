@@ -927,3 +927,20 @@ def register_as_agent(
     db.refresh(current_user)
     return current_user
 
+
+@router.get("/admin/stats")
+def get_admin_stats(db: Session = Depends(get_db)):
+    """Retrieve fast, aggregated count metrics for all tables for the admin dashboard."""
+    from app.models.schema import ProviderConfig, User, Organization, Business, Scan, ScanResult, Team, Lead
+    return {
+        "providers": db.query(ProviderConfig).count(),
+        "users": db.query(User).count(),
+        "organizations": db.query(Organization).count(),
+        "businesses": db.query(Business).count(),
+        "scans": db.query(Scan).count(),
+        "results": db.query(ScanResult).count(),
+        "teams": db.query(Team).count(),
+        "leads": db.query(Lead).count()
+    }
+
+
