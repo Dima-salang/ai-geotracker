@@ -1,42 +1,31 @@
 import { NextResponse } from "next/server";
-import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
+import { createClient } from "@/utils/supabase/server";
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
   const next = searchParams.get("next") ?? "/dashboard";
+  const authError = searchParams.get("error_description") ?? searchParams.get("error");
 
-  if (code) {
-    const cookieStore = await cookies();
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll() {
-            return cookieStore.getAll();
-          },
-          setAll(cookiesToSet) {
-            try {
-              cookiesToSet.forEach(({ name, value, options }) =>
-                cookieStore.set(name, value, options)
-              );
-            } catch {
-              // The `setAll` method was called from a Server Component.
-              // This can be ignored if you have middleware refreshing
-              // user sessions.
-            }
-          },
-        },
-      }
-    );
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
-    if (!error) {
-      return NextResponse.redirect(`${origin}${next}`);
-    }
+  if (authError) {
+    const login = new URL("/", origin);
+    login.searchParams.set("auth_error", authError);
+    return NextResponse.redirect(login);
   }
 
-  // if code exchange fails or isn't present (e.g., implicit grant hash fragment), redirect directly to home page where the client-side Supabase client will parse the hash token automatically
+  if (!code) {
+    return NextResponse.redirect(`${origin}${next}`);
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase.auth.exchangeCodeForSession(code);
+
+  if (error) {
+    console.error("[auth/callback] exchangeCodeForSession:", error.message);
+    const login = new URL("/", origin);
+    login.searchParams.set("auth_error", error.message);
+    return NextResponse.redirect(login);
+  }
+
   return NextResponse.redirect(`${origin}${next}`);
 }
