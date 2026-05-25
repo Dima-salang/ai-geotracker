@@ -143,17 +143,23 @@ class ScanService:
             try:
                 active_configs = ProviderService.get_active_configs(db)
                 providers_to_query = [
-                    {"name": c.provider, "model": c.model, "display_name": c.display_name}
+                    {"name": c.provider, "model": c.model, "display_name": c.display_name, "id": str(c.id)}
                     for c in active_configs
                     if c.provider != "gemini_grounding"
                 ]
             except Exception:
-                providers_to_query = PROVIDER_CONFIG
+                providers_to_query = [
+                    {"name": p["name"], "model": p.get("model"), "display_name": p.get("display_name"), "id": f"static-{p['name']}"}
+                    for p in PROVIDER_CONFIG
+                ]
 
             if not providers_to_query:
-                providers_to_query = PROVIDER_CONFIG
+                providers_to_query = [
+                    {"name": p["name"], "model": p.get("model"), "display_name": p.get("display_name"), "id": f"static-{p['name']}"}
+                    for p in PROVIDER_CONFIG
+                ]
 
-            yield f"event: progress\ndata: {json.dumps({'stage': 'querying_providers', 'provider_count': len(providers_to_query), 'providers': [{'provider': p['name'], 'model': p.get('model'), 'display_name': p.get('display_name')} for p in providers_to_query], 'prompt_count': len(prompts)})}\n\n"
+            yield f"event: progress\ndata: {json.dumps({'stage': 'querying_providers', 'provider_count': len(providers_to_query), 'providers': [{'provider': p['name'], 'model': p.get('model'), 'display_name': p.get('display_name'), 'id': p.get('id')} for p in providers_to_query], 'prompt_count': len(prompts)})}\n\n"
 
             # Resolve ALL provider configs synchronously before spawning tasks.
             # This keeps the synchronous DB lookup out of the parallel hot path so
@@ -214,6 +220,15 @@ class ScanService:
 
             db.commit()
 
+            # Automatically register as a potential lead if visibility score is low (< 60)
+            if scan.overall_score < 70:
+                from app.services.team_service import TeamService
+                try:
+                    TeamService.distribute_lead(db, biz.id, scan.overall_score)
+                except Exception as lead_err:
+                    import logging
+                    logging.getLogger("app.services.scan_service").warning("Failed to distribute potential lead: %s", lead_err)
+
             yield f"event: complete\ndata: {json.dumps({'overall_score': scan.overall_score, 'summary': scan.summary, 'recommendations': scan.recommendations})}\n\n"
 
         except Exception as e:
@@ -230,6 +245,7 @@ class ScanService:
     def list_scans(
         db: Session, 
         business_id: Optional[uuid.UUID] = None, 
+        user_id: Optional[uuid.UUID] = None, 
         status: Optional[str] = None, 
         limit: int = 100, 
         offset: int = 0
@@ -238,6 +254,8 @@ class ScanService:
         query = db.query(Scan)
         if business_id:
             query = query.filter(Scan.business_id == business_id)
+        if user_id:
+            query = query.filter(Scan.user_id == user_id)
         if status:
             query = query.filter(Scan.status == status)
         return query.order_by(Scan.created_at.desc()).offset(offset).limit(limit).all()
