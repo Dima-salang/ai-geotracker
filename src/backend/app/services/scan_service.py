@@ -11,7 +11,7 @@ from app.services.provider_service import ProviderService
 from app.graph.state import ScanRequest, ScanState, ProviderResult
 from app.models.database import SessionLocal
 from app.models.schema import (
-    Business, Scan, ScanResult,
+    Business, Scan, ScanResult, ScanTelemetry,
     ScanCreate, ScanUpdate, ScanResultCreate, ScanResultUpdate
 )
 
@@ -206,7 +206,7 @@ class ScanService:
             scan.completed_at = datetime.now(timezone.utc)
 
             for pr in collected_results:
-                db.add(ScanResult(
+                scan_res = ScanResult(
                     scan_id=scan.id,
                     provider=pr.provider,
                     model=pr.model,
@@ -222,7 +222,18 @@ class ScanService:
                     tokens_used=None,     # Set to None to avoid double-counting; raw OTel spans log tokens directly
                     error=pr.error,
                     raw_response=json.dumps(pr.prompt_results) if pr.prompt_results else None,
-                ))
+                )
+                db.add(scan_res)
+                db.flush()
+
+                # Find any corresponding ScanTelemetry record(s) and link them!
+                telemetry_rows = db.query(ScanTelemetry).filter(
+                    ScanTelemetry.scan_id == scan.id,
+                    ScanTelemetry.provider == pr.provider,
+                    ScanTelemetry.model == pr.model
+                ).all()
+                for tel in telemetry_rows:
+                    tel.scan_result_id = scan_res.id
 
             db.commit()
 

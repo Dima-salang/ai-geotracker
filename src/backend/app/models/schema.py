@@ -153,6 +153,7 @@ class Scan(Base):
     business: Mapped["Business"] = relationship("Business", back_populates="scans")
     user: Mapped["User"] = relationship("User", back_populates="scans")
     results: Mapped[List["ScanResult"]] = relationship("ScanResult", back_populates="scan", cascade="all, delete-orphan")
+    telemetries: Mapped[List["ScanTelemetry"]] = relationship("ScanTelemetry", back_populates="scan", cascade="all, delete-orphan")
 
 
 class ScanResult(Base):
@@ -178,6 +179,26 @@ class ScanResult(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     scan: Mapped["Scan"] = relationship("Scan", back_populates="results")
+    telemetries: Mapped[List["ScanTelemetry"]] = relationship("ScanTelemetry", back_populates="scan_result")
+
+
+class ScanTelemetry(Base):
+    __tablename__ = "scan_telemetries"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    scan_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("scans.id"), nullable=False)
+    scan_result_id: Mapped[Optional[uuid.UUID]] = mapped_column(Uuid, ForeignKey("scan_results.id"), nullable=True)
+    provider: Mapped[str] = mapped_column(String, nullable=False)
+    model: Mapped[str] = mapped_column(String, nullable=False)
+    display_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    latency_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    tokens_used: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    scan: Mapped["Scan"] = relationship("Scan", back_populates="telemetries")
+    scan_result: Mapped[Optional["ScanResult"]] = relationship("ScanResult", back_populates="telemetries")
 
 
 class ProviderConfig(Base):

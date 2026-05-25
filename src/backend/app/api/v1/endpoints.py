@@ -770,23 +770,23 @@ def get_observability_stats(db: Session = Depends(get_db)):
     We aggregate latency, token usage, success rate, and deficits.
     """
     from sqlalchemy import func
-    from app.models.schema import Scan, ScanResult
+    from app.models.schema import Scan, ScanTelemetry
     
     # 1. Total tokens consumed by provider
     tokens_by_provider = db.query(
-        ScanResult.provider,
-        func.sum(ScanResult.tokens_used).label("total_tokens")
-    ).filter(ScanResult.tokens_used != None).group_by(ScanResult.provider).all()
+        ScanTelemetry.provider,
+        func.sum(ScanTelemetry.tokens_used).label("total_tokens")
+    ).filter(ScanTelemetry.tokens_used != None).group_by(ScanTelemetry.provider).all()
     
     # 2. Average latency by provider
     latency_by_provider = db.query(
-        ScanResult.provider,
-        func.avg(ScanResult.latency_ms).label("avg_latency")
-    ).filter(ScanResult.latency_ms != None).group_by(ScanResult.provider).all()
+        ScanTelemetry.provider,
+        func.avg(ScanTelemetry.latency_ms).label("avg_latency")
+    ).filter(ScanTelemetry.latency_ms != None).group_by(ScanTelemetry.provider).all()
     
     # 3. Overall scan success rate
-    total_results = db.query(ScanResult).count()
-    failed_results = db.query(ScanResult).filter(ScanResult.status == "failed").count()
+    total_results = db.query(ScanTelemetry).count()
+    failed_results = db.query(ScanTelemetry).filter(ScanTelemetry.status == "failed").count()
     success_rate = 100.0
     if total_results > 0:
         success_rate = round(((total_results - failed_results) / total_results) * 100, 1)

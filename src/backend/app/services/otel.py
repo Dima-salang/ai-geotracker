@@ -61,21 +61,17 @@ def measure_llm_call(provider_name: str, model_name: str, prompt: str = ""):
                 scan_id = current_scan_id.get()
                 if scan_id:
                     from app.models.database import SessionLocal
-                    from app.models.schema import ScanResult
+                    from app.models.schema import ScanTelemetry
                     
                     db = SessionLocal()
                     try:
                         # Write the raw telemetry directly to the DB!
-                        db.add(ScanResult(
+                        db.add(ScanTelemetry(
                             scan_id=scan_id,
                             provider=provider_name,
                             model=model_name,
                             display_name=provider_name.capitalize(),
                             status="complete" if llm_status == "success" else "failed",
-                            score=0,
-                            mentioned=False,
-                            actionable=False,
-                            domain_match=False,
                             latency_ms=int(latency_ms),
                             tokens_used=tokens_used,
                             error=str(span.status.description) if (hasattr(span, "status") and span.status and getattr(span.status, "description", None)) else None,
