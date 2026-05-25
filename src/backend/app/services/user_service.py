@@ -96,7 +96,7 @@ class UserService:
     @staticmethod
     def list_users(db: Session, limit: int = 100, offset: int = 0) -> List[User]:
         """List registered users with pagination."""
-        return db.query(User).offset(offset).limit(limit).all()
+        return db.query(User).order_by(User.created_at.desc()).offset(offset).limit(limit).all()
 
     @staticmethod
     def create_user(db: Session, data: UserCreate) -> User:
@@ -109,7 +109,10 @@ class UserService:
             phone=data.phone,
             email=data.email,
             auth_provider=data.auth_provider,
-            tier=data.tier
+            tier=data.tier,
+            role=data.role,
+            team_id=data.team_id,
+            is_verified=data.is_verified
         )
         db.add(user)
         db.commit()
@@ -144,7 +147,7 @@ class UserService:
     @staticmethod
     def list_organizations(db: Session, limit: int = 100, offset: int = 0) -> List[Organization]:
         """List parent franchise organizations with pagination."""
-        return db.query(Organization).offset(offset).limit(limit).all()
+        return db.query(Organization).order_by(Organization.created_at.desc()).offset(offset).limit(limit).all()
 
     @staticmethod
     def update_organization(db: Session, org_id: uuid.UUID, name: Optional[str]) -> Optional[Organization]:
