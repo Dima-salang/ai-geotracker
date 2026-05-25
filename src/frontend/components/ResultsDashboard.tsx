@@ -202,7 +202,7 @@ export default function ResultsDashboard({
       };
     }
     
-    if (pr.error || pr.status === "error") {
+    if (pr.error || pr.status === "error" || pr.status === "failed") {
       return {
         bg: "bg-[#0055FF]/[0.03] text-rose-600 border-[#0055FF]/20 font-medium",
         label: "✗",

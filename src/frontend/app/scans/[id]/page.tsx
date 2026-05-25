@@ -5,12 +5,14 @@ import Link from "next/link";
 import ResultsDashboard from "../../../components/ResultsDashboard";
 
 interface ScanReportPageProps {
-  params: Promise<{ id: string }>;
+  params: Promise<{ id: string }> | { id: string };
 }
 
 export default function ScanReportPage({ params }: ScanReportPageProps) {
-  const resolvedParams = use(params);
-  const scanId = resolvedParams.id;
+  const resolvedParams = params && typeof (params as any).then === "function"
+    ? use(params as Promise<{ id: string }>)
+    : (params as { id: string });
+  const scanId = resolvedParams?.id;
   
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState("");
