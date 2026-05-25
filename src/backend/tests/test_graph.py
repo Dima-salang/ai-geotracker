@@ -468,14 +468,15 @@ class TestGraph:
         assert "validate" in graph.nodes
         assert "classify" in graph.nodes
         assert "geo_expand" in graph.nodes
-        assert "web_search" in graph.nodes
+        # web_search runs in ScanService parallel to provider queries
+        assert "web_search" not in graph.nodes
         # query_providers and score are now handled by ScanService, not the graph
         assert "query_providers" not in graph.nodes
         assert "score" not in graph.nodes
 
     @pytest.mark.asyncio
     async def test_full_scan_pipeline(self, mocker):
-        """Graph runs validate -> classify -> geo_expand -> web_search."""
+        """Graph runs validate -> classify -> geo_expand (web_search is in ScanService)."""
         mocker.patch(
             "app.services.search_service.SearchService.search",
             new_callable=mocker.AsyncMock,
@@ -512,14 +513,14 @@ class TestGraph:
 
         assert "prompts" in result
         assert len(result["prompts"]) >= 1
-        assert "search_results" in result
+        # search_results are populated by ScanService parallel web_search, not the graph
         # provider_results and overall_score are handled by ScanService, not the graph
         assert "overall_score" not in result or result.get("overall_score") is None
 
     @pytest.mark.asyncio
     async def test_stream_emits_progress_events(self, mocker):
-        """Graph streams validate → classify → geo_expand → web_search.
-        Provider queries and scoring are handled in ScanService."""
+        """Graph streams validate → classify → geo_expand.
+        web_search, provider queries, and scoring are handled in ScanService."""
         mocker.patch(
             "app.services.search_service.SearchService.search",
             new_callable=mocker.AsyncMock,
@@ -561,11 +562,10 @@ class TestGraph:
         for e in events:
             all_nodes.update(e.keys())
 
-        # Graph runs through validate, classify, geo_expand, and web_search
         assert "validate" in all_nodes
         assert "classify" in all_nodes
         assert "geo_expand" in all_nodes
-        assert "web_search" in all_nodes
+        assert "web_search" not in all_nodes
         assert "query_providers" not in all_nodes
         assert "score" not in all_nodes
 

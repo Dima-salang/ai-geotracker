@@ -364,3 +364,29 @@ def test_provider_service_key_reconstruction(db_session):
     )
     updated_all = ProviderService.create_provider_config(db_session, update_data_all_no_change)
     assert updated_all.api_key == "key1,new_key2,key3"
+
+
+def test_apply_scan_tier_limits_free_tier():
+    from app.services.scan_service import ScanService, FREE_MAX_PROMPTS, FREE_MAX_PROVIDERS
+
+    prompts = ["p1", "p2", "p3"]
+    providers = [{"name": f"p{i}"} for i in range(5)]
+    limited_prompts, limited_providers = ScanService._apply_scan_tier_limits(
+        prompts, providers, is_premium=False
+    )
+    assert len(limited_prompts) == FREE_MAX_PROMPTS
+    assert limited_prompts == ["p1", "p2"]
+    assert len(limited_providers) == FREE_MAX_PROVIDERS
+    assert limited_providers[0]["name"] == "p0"
+
+
+def test_apply_scan_tier_limits_premium_unlimited():
+    from app.services.scan_service import ScanService
+
+    prompts = ["p1", "p2", "p3"]
+    providers = [{"name": "a"}, {"name": "b"}]
+    out_prompts, out_providers = ScanService._apply_scan_tier_limits(
+        prompts, providers, is_premium=True
+    )
+    assert out_prompts == prompts
+    assert out_providers == providers
