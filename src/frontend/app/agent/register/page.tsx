@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { getAuthCallbackUrl } from "@/lib/auth/site-url";
 import { supabase } from "../../../utils/supabase";
 
 interface Team {
@@ -101,7 +102,7 @@ export default function AgentRegister() {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: window.location.origin + "/auth/callback",
+          redirectTo: getAuthCallbackUrl(),
         },
       });
       if (error) throw error;

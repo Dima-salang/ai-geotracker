@@ -1,5 +1,6 @@
 "use client";
 
+import { getAuthCallbackUrl } from "@/lib/auth/site-url";
 import { supabase } from "@/utils/supabase";
 import { bodySmall, btnPrimary, headingH2 } from "@/lib/marketing/design-tokens";
 
@@ -57,10 +58,9 @@ export function SignInModal({ open, onClose }: SignInModalProps) {
         <button
           type="button"
           onClick={async () => {
-            const redirectTo = `${window.location.origin}/auth/callback`;
             const { error } = await supabase.auth.signInWithOAuth({
               provider: "google",
-              options: { redirectTo },
+              options: { redirectTo: getAuthCallbackUrl() },
             });
             if (error) alert(`Sign in failed: ${error.message}`);
           }}
