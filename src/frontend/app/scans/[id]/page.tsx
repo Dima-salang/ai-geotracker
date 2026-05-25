@@ -111,7 +111,7 @@ export default function ScanReportPage({ params }: ScanReportPageProps) {
                   industry: scanData.business_industry,
                   primary_city: scanData.business_city,
                   primary_state: scanData.business_state,
-                  country: "US",
+                  country: scanData.business_country || "",
                   service_focuses: scanData.business_service_focuses || [],
                   is_virtual: scanData.is_virtual ?? false,
                 }}
