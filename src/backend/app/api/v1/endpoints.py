@@ -177,7 +177,7 @@ async def run_scan(
             )
 
     return StreamingResponse(
-        ScanService.scan_event_stream(req),
+        ScanService.scan_event_stream(req, is_premium=is_premium),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

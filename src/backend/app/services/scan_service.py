@@ -1,12 +1,13 @@
 import asyncio
 import json
+import logging
 import uuid
 from datetime import datetime, timezone
 from typing import AsyncGenerator, List, Optional
 from sqlalchemy.orm import Session
 
 from app.graph.graph import build_graph
-from app.graph.nodes import query_single_provider, score_results, PROVIDER_CONFIG
+from app.graph.nodes import query_single_provider, score_results, web_search, PROVIDER_CONFIG
 from app.services.provider_service import ProviderService
 from app.graph.state import ScanRequest, ScanState, ProviderResult
 from app.models.database import SessionLocal
@@ -15,12 +16,84 @@ from app.models.schema import (
     ScanCreate, ScanUpdate, ScanResultCreate, ScanResultUpdate
 )
 
+logger = logging.getLogger("app.services.scan_service")
+
+# Free-tier caps (premium/enterprise use full prompt set and all active providers)
+FREE_MAX_PROMPTS = 3
+FREE_MAX_PROVIDERS = 5
+# Max time provider tasks wait for parallel web_search before running without grounding
+WEB_SEARCH_WAIT_SECONDS = 30
+
 
 class ScanService:
     graph = build_graph()
 
+    @staticmethod
+    def _apply_scan_tier_limits(
+        prompts: List[str],
+        providers: List[dict],
+        is_premium: bool,
+    ) -> tuple[List[str], List[dict]]:
+        if is_premium:
+            return prompts, providers
+        limited_prompts = prompts[:FREE_MAX_PROMPTS]
+        limited_providers = providers[:FREE_MAX_PROVIDERS]
+        if len(limited_prompts) < len(prompts) or len(limited_providers) < len(providers):
+            logger.info(
+                "Free-tier scan limits applied: prompts %d→%d, providers %d→%d",
+                len(prompts),
+                len(limited_prompts),
+                len(providers),
+                len(limited_providers),
+            )
+        return limited_prompts, limited_providers
+
+    @staticmethod
+    async def _run_web_search(state: ScanState) -> List[dict]:
+        output = await web_search(state)
+        return output.get("search_results", [])
+
+    @staticmethod
+    async def _await_web_search_results(
+        task: asyncio.Task,
+        timeout: float = WEB_SEARCH_WAIT_SECONDS,
+    ) -> List[dict]:
+        try:
+            return await asyncio.wait_for(asyncio.shield(task), timeout=timeout)
+        except asyncio.TimeoutError:
+            logger.warning(
+                "web_search did not finish within %.1fs; provider queries proceed without SERP grounding",
+                timeout,
+            )
+            return []
+        except Exception as e:
+            logger.warning("web_search task failed: %s", e)
+            return []
+
     @classmethod
-    async def scan_event_stream(cls, req: ScanRequest) -> AsyncGenerator[str, None]:
+    async def _query_provider_with_search(
+        cls,
+        web_search_task: asyncio.Task,
+        provider_cfg: dict,
+        prompts: List[str],
+        business_name: str,
+        domain: str,
+        call_args: dict,
+    ) -> ProviderResult:
+        search_results = await cls._await_web_search_results(web_search_task)
+        return await query_single_provider(
+            provider_cfg,
+            prompts,
+            business_name,
+            domain,
+            call_args=call_args,
+            search_results=search_results,
+        )
+
+    @classmethod
+    async def scan_event_stream(
+        cls, req: ScanRequest, *, is_premium: bool = False
+    ) -> AsyncGenerator[str, None]:
         """
         Execute the scan pipeline and stream back results as they arrive.
 
@@ -88,7 +161,7 @@ class ScanService:
             yield f"event: progress\ndata: {json.dumps({'stage': 'initiated', 'scan_id': str(scan.id), 'business_id': str(biz.id)})}\n\n"
 
             initial = ScanState(request=req)
-            # ── PHASE 1: LangGraph (validate → classify → geo_expand → web_search) ──────────
+            # ── PHASE 1: LangGraph (validate → classify → geo_expand) ──────────
             async for step in cls.graph.astream(initial):
                 for node_name, output in step.items():
                     # Keep local state in sync with each node's output
@@ -135,10 +208,10 @@ class ScanService:
                     elif node_name == "geo_expand":
                         yield f"event: progress\ndata: {json.dumps({'stage': 'geocoding', 'status': 'complete'})}\n\n"
 
-                    elif node_name == "web_search":
-                        yield f"event: progress\ndata: {json.dumps({'stage': 'web_search', 'status': 'complete'})}\n\n"
+            # ── PHASE 2: web_search ∥ provider queries ─────────────────────────
+            yield f"event: progress\ndata: {json.dumps({'stage': 'web_search', 'status': 'running'})}\n\n"
+            web_search_task = asyncio.create_task(cls._run_web_search(initial))
 
-            # ── PHASE 2: Provider queries – stream each result as it arrives ───
             prompts = initial.prompts
             business_name = initial.request.business_name
             domain = initial.request.domain
@@ -163,7 +236,11 @@ class ScanService:
                     for p in PROVIDER_CONFIG
                 ]
 
-            yield f"event: progress\ndata: {json.dumps({'stage': 'querying_providers', 'provider_count': len(providers_to_query), 'providers': [{'provider': p['name'], 'model': p.get('model'), 'display_name': p.get('display_name'), 'id': p.get('id')} for p in providers_to_query], 'prompt_count': len(prompts)})}\n\n"
+            prompts, providers_to_query = cls._apply_scan_tier_limits(
+                prompts, providers_to_query, is_premium
+            )
+
+            yield f"event: progress\ndata: {json.dumps({'stage': 'querying_providers', 'provider_count': len(providers_to_query), 'providers': [{'provider': p['name'], 'model': p.get('model'), 'display_name': p.get('display_name'), 'id': p.get('id')} for p in providers_to_query], 'prompt_count': len(prompts), 'tier_limited': not is_premium})}\n\n"
 
             # Resolve ALL provider configs synchronously before spawning tasks.
             # This keeps the synchronous DB lookup out of the parallel hot path so
@@ -173,21 +250,34 @@ class ScanService:
                 for cfg in providers_to_query
             ]
 
-            # Create Tasks eagerly — all providers start executing immediately.
-            # asyncio.as_completed then fires for whichever task finishes first.
+            # Providers start immediately; each waits (briefly) on the shared web_search task
+            # for SERP grounding, so web_search overlaps the slowest provider wall-clock.
             provider_tasks = [
                 asyncio.create_task(
-                    query_single_provider(cfg, prompts, business_name, domain, call_args=call_args, search_results=initial.search_results)
+                    cls._query_provider_with_search(
+                        web_search_task, cfg, prompts, business_name, domain, call_args
+                    )
                 )
                 for cfg, call_args in resolved
             ]
 
             collected_results: list[ProviderResult] = []
+            web_search_complete_sent = False
             for coro in asyncio.as_completed(provider_tasks):
+                if not web_search_complete_sent and web_search_task.done():
+                    yield f"event: progress\ndata: {json.dumps({'stage': 'web_search', 'status': 'complete'})}\n\n"
+                    web_search_complete_sent = True
                 result: ProviderResult = await coro
                 collected_results.append(result)
                 pr_dict = result.model_dump()
                 yield f"event: provider_result\ndata: {json.dumps(pr_dict)}\n\n"
+
+            if not web_search_complete_sent:
+                try:
+                    await web_search_task
+                except Exception:
+                    pass
+                yield f"event: progress\ndata: {json.dumps({'stage': 'web_search', 'status': 'complete'})}\n\n"
 
 
             # ── PHASE 3: Score aggregated results and emit complete event ───────
