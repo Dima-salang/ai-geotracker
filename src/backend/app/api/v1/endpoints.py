@@ -928,11 +928,26 @@ def register_as_agent(
     return current_user
 
 
+_admin_stats_cache: dict | None = None
+_admin_stats_cached_at: float = 0.0
+_ADMIN_STATS_TTL_SECONDS = 60.0
+
+
 @router.get("/admin/stats")
 def get_admin_stats(db: Session = Depends(get_db)):
     """Retrieve fast, aggregated count metrics for all tables for the admin dashboard."""
+    import time
     from app.models.schema import ProviderConfig, User, Organization, Business, Scan, ScanResult, Team, Lead
-    return {
+
+    global _admin_stats_cache, _admin_stats_cached_at
+    now = time.monotonic()
+    if (
+        _admin_stats_cache is not None
+        and (now - _admin_stats_cached_at) < _ADMIN_STATS_TTL_SECONDS
+    ):
+        return _admin_stats_cache
+
+    payload = {
         "providers": db.query(ProviderConfig).count(),
         "users": db.query(User).count(),
         "organizations": db.query(Organization).count(),
@@ -940,7 +955,10 @@ def get_admin_stats(db: Session = Depends(get_db)):
         "scans": db.query(Scan).count(),
         "results": db.query(ScanResult).count(),
         "teams": db.query(Team).count(),
-        "leads": db.query(Lead).count()
+        "leads": db.query(Lead).count(),
     }
+    _admin_stats_cache = payload
+    _admin_stats_cached_at = now
+    return payload
 
 
