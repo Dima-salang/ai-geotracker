@@ -8,6 +8,7 @@ export interface ProviderResult {
   provider: string;
   display_name?: string;
   model?: string | null;
+  config_id?: string | null;
   status: string; // 'green' | 'yellow' | 'red'
   score: number;
   rank_position?: number | null;
@@ -169,18 +170,39 @@ export default function ResultsDashboard({
     )
   ).filter(Boolean);
 
+  const cleanReason = (reason: string | null | undefined): string => {
+    if (!reason) return "Excluded from AI search recommendations.";
+    const lower = reason.toLowerCase();
+    if (
+      lower.includes("error") ||
+      lower.includes("fail") ||
+      lower.includes("exception") ||
+      lower.includes("status code") ||
+      lower.includes("rate limit") ||
+      lower.includes("unauthorized") ||
+      lower.includes("forbidden")
+    ) {
+      return "Excluded from AI search recommendations.";
+    }
+    return reason;
+  };
+
   const getCellDetails = (providerName: string, modelName: string | null | undefined, promptText: string) => {
-    const pr = providerResults.find((p) => p.provider === providerName && p.model === modelName);
+    const pr = providerResults.find(
+      (p) =>
+        p.provider.toLowerCase() === providerName.toLowerCase() &&
+        (p.model || "").trim().toLowerCase() === (modelName || "").trim().toLowerCase()
+    );
     if (!pr || pr.status === "loading") {
       return {
         bg: "bg-[#0055FF]/[0.03] text-[#0055FF]/80 border-[#0055FF]/20 animate-pulse font-mono",
         label: "◆ Scanning",
         color: "text-[#0055FF]",
-        tooltip: "Query dispatch in progress across global context...",
+        tooltip: "Asking AI engines in your local area...",
       };
     }
     
-    if (pr.error) {
+    if (pr.error || pr.status === "error") {
       return {
         bg: "bg-[#0055FF]/[0.03] text-rose-600 border-[#0055FF]/20 font-medium",
         label: "✗",
@@ -193,9 +215,9 @@ export default function ResultsDashboard({
     if (!pResult) {
       return {
         bg: "bg-[#0055FF]/[0.03] text-[#0055FF]/80 border-[#0055FF]/20 animate-pulse font-mono",
-        label: "◆ Dispatching",
+        label: "◆ Scanning",
         color: "text-[#0055FF]",
-        tooltip: "Analyzing provider output in real-time...",
+        tooltip: "Analyzing AI answers in real-time...",
       };
     }
 
@@ -214,7 +236,7 @@ export default function ResultsDashboard({
             bg: "bg-amber-500/10 text-amber-600 border-amber-500/20 font-bold",
             label: `#${rank}`,
             color: "text-amber-600",
-            tooltip: `Client recommended, but ranked at position #${rank}.`,
+            tooltip: `Business recommended, but ranked at position #${rank}.`,
           };
         }
       }
@@ -222,7 +244,7 @@ export default function ResultsDashboard({
         bg: "bg-amber-500/10 text-amber-600 border-amber-500/20 font-bold",
         label: "#1",
         color: "text-amber-600",
-        tooltip: `Client recommended, but ranked position is unresolved.`,
+        tooltip: `Business recommended, but ranked position is unresolved.`,
       };
     }
 
@@ -230,14 +252,14 @@ export default function ResultsDashboard({
       bg: "bg-rose-500/10 text-rose-600 border-rose-500/20 font-medium",
       label: "✗",
       color: "text-rose-600",
-      tooltip: pResult.reason || "Client brand was excluded from the recommendation lists.",
+      tooltip: cleanReason(pResult.reason),
     };
   };
 
   const formattedDate = new Date().toISOString().slice(0, 10);
   
   return (
-    <div className="w-full max-w-7xl mx-auto border border-foreground/10 bg-[#FAF9F6] text-black transition-all duration-500 animate-in fade-in slide-in-from-bottom-8 rounded-none p-0">
+    <div className="w-full max-w-[95vw] xl:max-w-[92vw] mx-auto border border-foreground/10 bg-[#FAF9F6] text-black transition-all duration-500 animate-in fade-in slide-in-from-bottom-8 rounded-none p-0">
       
       {/* ═══════════════════════ PLACEMENT 1: HEADER & PROFILE BENTO ═══════════════════════ */}
       <div className="grid grid-cols-1 md:grid-cols-12 border-b border-foreground/10">
@@ -285,7 +307,7 @@ export default function ResultsDashboard({
         {/* OVERALL SCORE BADGE */}
         <div className="md:col-span-4 p-8 flex flex-col items-center justify-center text-center bg-white/50">
           <span className="font-mono text-[10px] text-text-muted uppercase tracking-widest mb-3 font-bold">
-            AI Search Discovery Score
+            AI Search Visibility Score
           </span>
           <div className={`relative flex items-center justify-center w-40 h-40 border border-foreground/20 mb-4 bg-white transition-all duration-300 hover:border-[#0055FF] ${
             isScanning ? "border-[#0055FF] animate-pulse" : "border-foreground/20"
@@ -430,14 +452,14 @@ export default function ResultsDashboard({
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6 pb-4 border-b border-foreground/10">
           <div>
             <span className="font-mono text-[10px] text-[#0055FF] uppercase font-black tracking-widest block mb-1">
-              ◆ AI SEARCH MODEL AUDIT MATRIX
+              ◆ AI SEARCH AUDIT RESULTS
             </span>
             <h3 className="font-display text-2xl font-black uppercase tracking-tight text-black">
-              Search Query Citation Performance
+              AI Search Recommendation Details
             </h3>
           </div>
           <span className="font-mono text-[9px] text-[#0055FF] uppercase tracking-widest font-black">
-            *CLICK ANY CELL TO VIEW AI SEARCH ANSWERS
+            *CLICK ANY CELL TO VIEW DETAILS
           </span>
         </div>
 
@@ -445,7 +467,7 @@ export default function ResultsDashboard({
           <table className="w-full border-collapse text-left text-xs min-w-[800px]">
             <thead>
               <tr className="border-b border-foreground/10 font-mono text-[10px] text-black">
-                <th className="pb-4 font-black uppercase w-[35%] text-left">Search Query Statement</th>
+                <th className="pb-4 font-black uppercase w-[35%] text-left">Search Phrase</th>
                 {providerResults.map((pr) => (
                   <th key={`${pr.provider}-${pr.model || "default"}`} className="pb-4 font-black uppercase text-center font-mono w-[15%] border-l border-foreground/10">
                     <span className="block text-black font-black uppercase tracking-tight text-xs">
@@ -467,7 +489,7 @@ export default function ResultsDashboard({
               {uniquePrompts.length === 0 ? (
                 <tr>
                   <td colSpan={providerResults.length + 1} className="py-8 text-center text-zinc-500 font-mono text-xs italic">
-                    Awaiting citation results to build scorecard matrix...
+                    Checking AI recommendations in real-time...
                   </td>
                 </tr>
               ) : (
@@ -519,39 +541,43 @@ export default function ResultsDashboard({
         </div>
       </div>
 
-      {/* ── INTERACTIVE CELL INSPECTOR CONSOLE DRAWER ── */}
+      {/* ── INTERACTIVE CELL INSPECTOR DETAILS DRAWER ── */}
       {selectedCell && (
         <div className="bg-white text-black p-8 border-b border-foreground/10 rounded-none animate-in fade-in slide-in-from-top-4 duration-300 relative">
           <div className="flex justify-between items-center border-b border-foreground/10 pb-3 mb-4">
             <span className="font-mono text-xs text-[#0055FF] font-black uppercase tracking-widest flex items-center gap-1.5 animate-pulse">
               <span className="w-1.5 h-1.5 bg-[#0055FF]"></span>
-              AI SEARCH ANSWER — {selectedCell.provider.toUpperCase()} ({cleanLabel(selectedCell.model || "default").toUpperCase()})
+              AI RECOMMENDATION SUMMARY — {selectedCell.provider.toUpperCase()} ({cleanLabel(selectedCell.model || "default").toUpperCase()})
             </span>
             <button 
               onClick={() => setSelectedCell(null)}
               className="font-mono text-[10px] text-primary hover:text-black uppercase font-bold cursor-pointer border border-foreground/10 px-2 py-0.5 bg-[#FAF9F6]"
             >
-              [CLOSE X]
+              [CLOSE]
             </button>
           </div>
           
           <div className="space-y-4 font-sans text-xs">
             <div>
-              <span className="font-mono text-[9px] text-text-muted uppercase tracking-wider block mb-1 font-bold">Query Scenario</span>
+              <span className="font-mono text-[9px] text-text-muted uppercase tracking-wider block mb-1 font-bold">Search Phrase</span>
               <p className="font-mono text-black font-bold bg-[#FAF9F6] p-3 border border-foreground/10 uppercase tracking-tight text-[11px]">{selectedCell.prompt}</p>
             </div>
 
             {(() => {
-              const pr = providerResults.find((p) => p.provider === selectedCell.provider && p.model === selectedCell.model);
+              const pr = providerResults.find(
+                (p) =>
+                  p.provider.toLowerCase() === selectedCell.provider.toLowerCase() &&
+                  (p.model || "").trim().toLowerCase() === (selectedCell.model || "").trim().toLowerCase()
+              );
               const pResult = (pr?.prompt_results || []).find((p) => p.prompt === selectedCell.prompt);
               
               if (!pResult) {
-                return <p className="font-mono text-[10px] text-text-muted">Awaiting citation outcome metrics...</p>;
+                return <p className="font-mono text-[10px] text-text-muted">Analyzing search recommendations...</p>;
               }
 
               return (
                 <div className="space-y-4">
-                  {/* Raw AI Response text box */}
+                  {/* Raw AI Response text box commented out for now
                   <div>
                     <span className="font-mono text-[9px] text-text-muted uppercase tracking-wider block mb-1 font-bold">AI Search Response Text</span>
                     <div 
@@ -559,27 +585,28 @@ export default function ResultsDashboard({
                       dangerouslySetInnerHTML={{ __html: marked.parse(pResult.raw_response || "No response content provided.") as string }}
                     />
                   </div>
+                  */}
 
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
                   {/* Left Side: Metadata and Competitors */}
                   <div className="md:col-span-5 space-y-4">
                     <div className="grid grid-cols-2 gap-4">
                       <div className="bg-[#FAF9F6] p-4 border border-foreground/10">
-                        <span className="font-mono text-[9px] text-text-muted uppercase tracking-wider block mb-1 font-bold">Citation Match</span>
+                        <span className="font-mono text-[9px] text-text-muted uppercase tracking-wider block mb-1 font-bold">AI Recommendation</span>
                         <span className={`font-mono text-sm font-black uppercase ${pResult.mentioned ? "text-emerald-600" : "text-rose-600"}`}>
-                          {pResult.mentioned ? `CITED (RANK #${pResult.rank_position ?? "N/A"})` : "MISSING"}
+                          {pResult.mentioned ? `RECOMMENDED (RANK #${pResult.rank_position ?? "N/A"})` : "NOT RECOMMENDED"}
                         </span>
                       </div>
                       <div className="bg-[#FAF9F6] p-4 border border-foreground/10">
-                        <span className="font-mono text-[9px] text-text-muted uppercase tracking-wider block mb-1 font-bold">Web Link Match</span>
+                        <span className="font-mono text-[9px] text-text-muted uppercase tracking-wider block mb-1 font-bold">Website Link Included</span>
                         <span className={`font-mono text-sm font-black uppercase ${pResult.domain_match ? "text-emerald-600" : "text-rose-600"}`}>
-                          {pResult.domain_match ? "VERIFIED LINK" : "NO LINKED PROFILE"}
+                          {pResult.domain_match ? "YES" : "NO"}
                         </span>
                       </div>
                     </div>
 
                     <div className="bg-[#FAF9F6] p-4 border border-foreground/10">
-                      <span className="font-mono text-[9px] text-text-muted uppercase tracking-wider block mb-2 font-bold">Competing Brands Recommended</span>
+                      <span className="font-mono text-[9px] text-text-muted uppercase tracking-wider block mb-2 font-bold">Competitors Recommended</span>
                       {pResult.competitors && pResult.competitors.length > 0 ? (
                         <div className="flex flex-wrap gap-1.5">
                           {pResult.competitors.map((comp: string, cIdx: number) => (
@@ -589,7 +616,7 @@ export default function ResultsDashboard({
                           ))}
                         </div>
                       ) : (
-                        <span className="text-text-muted italic text-[10px]">No competing brands were cited in this query.</span>
+                        <span className="text-text-muted italic text-[10px]">No competing brands were recommended in this search.</span>
                       )}
                     </div>
                   </div>
@@ -597,13 +624,13 @@ export default function ResultsDashboard({
                   {/* Right Side: AI Reasoning */}
                   <div className="md:col-span-7 bg-[#FAF9F6] p-4 border border-foreground/10 flex flex-col justify-between">
                     <div>
-                      <span className="font-mono text-[9px] text-text-muted uppercase tracking-wider block mb-2 font-bold">AI CITATION ANALYSIS</span>
+                      <span className="font-mono text-[9px] text-text-muted uppercase tracking-wider block mb-2 font-bold">AI RECOMMENDATION REASONING</span>
                       <p className="text-black leading-relaxed text-[12px] font-medium">
-                        {pResult.reason || "Model returned generic local industry listings without direct brand visibility justification."}
+                        {cleanReason(pResult.reason) || "The AI engine returned generic local listings without direct brand visibility details."}
                       </p>
                     </div>
                     <div className="font-mono text-[9px] text-[#0055FF] uppercase tracking-widest mt-4 font-bold">
-                      *Consolidated via Upserv AI Judge
+                      *Analyzed via AI audit consensus
                     </div>
                   </div>
                 </div>
@@ -618,10 +645,10 @@ export default function ResultsDashboard({
       <div className="grid grid-cols-1 md:grid-cols-12 border-b border-foreground/10 bg-surface-container-low/30">
         <div className="md:col-span-6 p-8 border-b md:border-b-0 md:border-r border-foreground/10">
           <h3 className="font-mono text-[10px] text-[#0055FF] uppercase font-black tracking-widest mb-4">
-            AI Share of Voice (SOV)
+            AI Search Recommendation Share
           </h3>
           <p className="font-sans text-xs text-text-muted mb-6">
-            Percentage of conversational citations captured by each brand across query models.
+            Percentage of search recommendations captured by each brand across AI search engines.
           </p>
           
           <div className="space-y-4">
@@ -651,7 +678,7 @@ export default function ResultsDashboard({
               ))
             ) : isScanning ? (
               <div className="font-mono text-[10px] text-[#0055FF] animate-pulse py-4 font-bold">
-                ◆ Computing competitor citation footprints...
+                ◆ Calculating competitor search visibility...
               </div>
             ) : (
               <div className="font-sans text-xs text-text-muted italic py-4">
@@ -677,17 +704,17 @@ export default function ResultsDashboard({
 
               {isScanning ? (
                 <div className="font-mono text-[10px] text-text-muted uppercase animate-pulse">
-                  Compiling generative discovery analysis...
+                  Compiling AI visibility analysis...
                 </div>
               ) : (
                 <div className="space-y-3">
                   <h4 className={`font-display text-[15px] font-black uppercase tracking-tight mb-1 leading-none ${
                     clientSOV < 40 ? "text-rose-600" : clientSOV < 75 ? "text-amber-600" : "text-emerald-600"
                   }`}>
-                    {clientSOV < 40 ? "Critical Visibility Deficit" : clientSOV < 75 ? "Exposure Vulnerability" : "Dominant Search Moat"}
+                    {clientSOV < 40 ? "Critical Visibility Deficit" : clientSOV < 75 ? "Moderate Exposure Deficit" : "Dominant Search Lead"}
                   </h4>
                   <p className="font-sans text-xs text-black/80 leading-relaxed font-bold">
-                    {summary.executive_summary || `AI search models evaluated your online presence. Currently, you capture a ${clientSOV}% Share of Voice while competitors are actively occupying key digital queries.`}
+                    {summary.executive_summary || `AI search engines evaluated your online presence. Currently, your business captures a ${clientSOV}% recommendation share while competitor brands are occupying key local searches.`}
                   </p>
                 </div>
               )}
@@ -695,132 +722,198 @@ export default function ResultsDashboard({
           </div>
 
           <div className="mt-6 pt-4 border-t border-black/10 font-mono text-[9px] text-text-muted leading-normal">
-            *Executive consensus compiled over a database of all active model queries.
+            *Audit results compiled across all verified local AI search engines.
           </div>
         </div>
       </div>
 
       {/* ═══════════════════════ PLACEMENT 4: INTEGRATED PRICING CTA (UPSERV.AI) ═══════════════════════ */}
       <div className="p-8 md:p-12 bg-white text-center border-t border-foreground/10">
-        <div className="max-w-5xl mx-auto space-y-8">
+        <div className="max-w-7xl mx-auto space-y-8">
           <div className="text-center space-y-3">
             <span className="font-mono text-[10px] text-primary uppercase font-bold tracking-[0.25em] block animate-pulse">
-              ◆ AI CITATION DEFENSE ALLIANCE ◆
+              ◆ AI RECOMMENDATION DEFENSE ◆
             </span>
             <h2 className="font-display text-[2.2rem] md:text-[2.8rem] font-black uppercase tracking-tight leading-none text-black">
               You got a visibility score of {overallScore}/100.
             </h2>
             <p className="font-sans text-xs md:text-sm text-text-muted max-w-2xl mx-auto font-bold mt-2">
               {overallScore < 80 
-                ? "We can fix that. Let's claim your digital footprint and repair missing references before competitors dominate." 
-                : "Do not be complacent—competitors are actively deploying schema updates to hog your search share."}
+                ? "We can improve that. Let's list your business in key directories and secure your local search visibility." 
+                : "Stay ahead—competitors are actively updating their directory details to secure a larger recommendation share."}
             </p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pt-4">
-            {/* Pro Plan Card */}
+            {/* Premium Plan Card */}
             <div className="border border-foreground/10 bg-[#FAF9F6] p-8 text-left flex flex-col justify-between relative shadow-[4px_4px_0px_0px_rgba(0,0,0,0.05)] hover:scale-[1.01] transition-all">
               <div className="absolute top-3 right-3 font-mono text-[9px] bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 uppercase font-bold">
-                GROWTH LEVEL
+                MOST POPULAR
               </div>
               <div className="space-y-4">
                 <div>
-                  <h3 className="font-display text-2xl font-black uppercase tracking-tight text-black">PRO DEFENSE</h3>
+                  <h3 className="font-display text-2xl font-black uppercase tracking-tight text-black">PREMIUM</h3>
                   <p className="font-sans text-xs text-text-muted mt-1 leading-relaxed">
-                    Secure continuous citation protection, verify booking links in model indexes, and repair missing references.
+                    For owners who want the full diagnostic, not just the symptom. Unlocks advanced visibility repair plans and local coverages.
                   </p>
                 </div>
 
                 <div className="flex items-baseline gap-1 py-2 border-y border-foreground/5">
-                  <span className="font-mono text-4xl font-extrabold text-primary">$99</span>
+                  <span className="font-mono text-4xl font-extrabold text-primary">$49</span>
                   <span className="font-mono text-xs text-text-muted uppercase font-bold">/ Month</span>
                 </div>
 
                 <ul className="space-y-2 font-mono text-[10px] text-black/80 font-bold">
                   <li className="flex items-center gap-2">
-                    <span className="text-emerald-600 text-xs">✔</span> Daily automatic audit updates
+                    <span className="text-emerald-600 text-xs">✔</span> Step-by-Step AI Repair Plan
                   </li>
                   <li className="flex items-center gap-2">
-                    <span className="text-emerald-600 text-xs">✔</span> Repair missing listing links
+                    <span className="text-emerald-600 text-xs">✔</span> Direct Competitor Benchmarks
                   </li>
                   <li className="flex items-center gap-2">
-                    <span className="text-emerald-600 text-xs">✔</span> Track 50 search prompts in parallel
+                    <span className="text-emerald-600 text-xs">✔</span> Local Suburb Coverage Map
                   </li>
                   <li className="flex items-center gap-2">
-                    <span className="text-emerald-600 text-xs">✔</span> Standard schema generator engine
+                    <span className="text-emerald-600 text-xs">✔</span> Priority Verified Audit Badge
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className="text-emerald-600 text-xs">✔</span> Unlimited On-Demand Audits
                   </li>
                 </ul>
               </div>
 
               <div className="pt-6">
-                <button
+                <a
+                  href="mailto:sales@iozera.ai?subject=Inquiry regarding Premium AI Search Optimization"
+                  className="w-full font-mono text-xs bg-primary text-white px-6 py-4 hover:bg-primary-hover transition-all font-black uppercase tracking-widest border border-black/10 text-center block"
                   onClick={() => {
                     const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
                     fetch(`${BACKEND_URL}/api/v1/telemetry/engagement`, {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ event_type: "click_cta", target: "checkout_pro_plan" })
+                      body: JSON.stringify({ event_type: "click_cta", target: "checkout_premium_plan" })
                     }).catch(err => console.error(err));
-                    alert("Connecting to Upserv.ai Core: Defend/Claim your conversational footprint instantly on Pro.");
                   }}
-                  className="w-full font-mono text-xs bg-primary text-white px-6 py-4 hover:bg-[#0044DD] transition-all font-black uppercase tracking-widest border border-black/10 cursor-pointer"
                 >
-                  START PRO DEFENSE
-                </button>
+                  TALK TO SALES
+                </a>
               </div>
             </div>
 
-            {/* Enterprise Plan Card */}
+            {/* Ultra Premium Plan Card */}
             <div className="border border-foreground/10 bg-[#FAF9F6] p-8 text-left flex flex-col justify-between relative shadow-[4px_4px_0px_0px_rgba(0,0,0,0.05)] hover:scale-[1.01] transition-all">
               <div className="absolute top-3 right-3 font-mono text-[9px] bg-emerald-600/10 text-emerald-600 border border-emerald-600/20 px-2 py-0.5 uppercase font-bold">
                 COMPETITIVE MAX
               </div>
               <div className="space-y-4">
                 <div>
-                  <h3 className="font-display text-2xl font-black uppercase tracking-tight text-black">ENTERPRISE MOAT</h3>
+                  <h3 className="font-display text-2xl font-black uppercase tracking-tight text-black">ULTRA PREMIUM</h3>
                   <p className="font-sans text-xs text-text-muted mt-1 leading-relaxed">
-                    Full brand presence protection across conversational networks. Built for franchise and multi-location companies.
+                    For owners who want the problem fixed, not just measured. Full Done-For-You optimization with custom growth roadmaps.
                   </p>
                 </div>
 
                 <div className="flex items-baseline gap-1 py-2 border-y border-foreground/5">
-                  <span className="font-mono text-4xl font-extrabold text-emerald-600">$299</span>
+                  <span className="font-mono text-4xl font-extrabold text-emerald-600">$150</span>
                   <span className="font-mono text-xs text-text-muted uppercase font-bold">/ Month</span>
                 </div>
 
                 <ul className="space-y-2 font-mono text-[10px] text-black/80 font-bold">
                   <li className="flex items-center gap-2">
-                    <span className="text-emerald-600 text-xs">✔</span> All Pro Plan features included
+                    <span className="text-emerald-600 text-xs">✔</span> Done-For-You AI Optimization
                   </li>
                   <li className="flex items-center gap-2">
-                    <span className="text-emerald-600 text-xs">✔</span> Dedicated model auditing portal
+                    <span className="text-emerald-600 text-xs">✔</span> Continuous Citation Bug Fixes
                   </li>
                   <li className="flex items-center gap-2">
-                    <span className="text-emerald-600 text-xs">✔</span> Track unlimited models & queries
+                    <span className="text-emerald-600 text-xs">✔</span> AI-Ready Storefront Page
                   </li>
                   <li className="flex items-center gap-2">
-                    <span className="text-emerald-600 text-xs">✔</span> Multi-location analytics dashboard
+                    <span className="text-emerald-600 text-xs">✔</span> Personalized Search Growth Plan
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className="text-emerald-600 text-xs">✔</span> Direct line to our AI Specialist
                   </li>
                 </ul>
               </div>
 
               <div className="pt-6">
-                <button
+                <a
+                  href="mailto:sales@iozera.ai?subject=Inquiry regarding Ultra Premium Done-For-You AI Search Optimization"
+                  className="w-full font-mono text-xs bg-black text-white px-6 py-4 hover:bg-zinc-800 transition-all font-black uppercase tracking-widest border border-black/10 text-center block"
                   onClick={() => {
                     const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
                     fetch(`${BACKEND_URL}/api/v1/telemetry/engagement`, {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ event_type: "click_cta", target: "checkout_enterprise_plan" })
+                      body: JSON.stringify({ event_type: "click_cta", target: "checkout_ultra_plan" })
                     }).catch(err => console.error(err));
-                    alert("Connecting to Upserv.ai Core: Defend/Claim your conversational footprint instantly on Enterprise.");
                   }}
-                  className="w-full font-mono text-xs bg-black text-white px-6 py-4 hover:bg-[#0044DD] transition-all font-black uppercase tracking-widest border border-black/10 cursor-pointer"
                 >
-                  START ENTERPRISE MOAT
-                </button>
+                  TALK TO SALES
+                </a>
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ═══════════════════════ DEEP ANALYSIS: WHY AI SEARCH VISIBILITY MATTERS ═══════════════════════ */}
+      <div className="p-8 md:p-12 bg-[#FAF9F6] text-left border-t border-foreground/10 select-none">
+        <div className="max-w-7xl mx-auto space-y-8">
+          <div>
+            <span className="font-mono text-[9px] text-[#0055FF] uppercase font-bold tracking-[0.25em] block mb-2">
+              ◆ WHY THIS MATTERS ◆
+            </span>
+            <h3 className="font-display text-2xl font-black uppercase text-black">
+              Why AI Search Visibility Is Your Business's New Lifeline
+            </h3>
+            <p className="font-sans text-xs text-text-muted mt-2 max-w-3xl leading-relaxed font-bold">
+              Traditional search engines showed you a list of websites. Today's AI search tools — like ChatGPT, Gemini, and Perplexity — directly recommend businesses by name. If your business isn't in their recommendations, potential customers looking for your services never find you.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            
+            {/* Low Visibility Case Column */}
+            <div className={`p-6 border ${overallScore < 80 ? 'border-rose-600 bg-rose-600/[0.02]' : 'border-foreground/10 bg-white opacity-60'}`}>
+              <span className="font-mono text-[9px] text-rose-600 font-bold uppercase tracking-wider block mb-2">
+                [CASE A] SCORES BELOW 80: LOW VISIBILITY
+              </span>
+              <h4 className="font-display text-lg font-black uppercase text-black mb-3">Why You're Being Missed</h4>
+              <p className="font-sans text-xs text-text-muted leading-relaxed font-bold mb-4">
+                AI search tools cannot confidently identify your business because your online listings are incomplete or inconsistent. When a potential customer asks "who is the best [your service] near me?", the AI recommends your competitors instead — simply because they have better-documented profiles.
+              </p>
+              <div className="font-mono text-[9px] text-rose-600 font-bold">
+                *ACTION: Talk to sales to fix your listings and get recommended.
+              </div>
+            </div>
+
+            {/* High Visibility Case Column */}
+            <div className={`p-6 border flex flex-col justify-between ${overallScore >= 80 ? 'border-emerald-600 bg-emerald-600/[0.02]' : 'border-foreground/10 bg-white opacity-60'}`}>
+              <div>
+                <span className="font-mono text-[9px] text-emerald-600 font-bold uppercase tracking-wider block mb-2">
+                  [CASE B] SCORES 80+: STRONG VISIBILITY
+                </span>
+                <h4 className="font-display text-lg font-black uppercase text-black mb-3">Staying Ahead</h4>
+                <p className="font-sans text-xs text-text-muted leading-relaxed font-bold mb-4">
+                  A high score means AI search tools are actively recommending your business. However, AI recommendations update regularly. If a competitor improves their listings or online presence, they can move ahead of you in recommendations — sometimes overnight.
+                </p>
+              </div>
+              {overallScore >= 80 && (
+                <div className="pt-2">
+                  <button
+                    onClick={() => {
+                      alert("Why Your Score Is High:\n\nYour business is being recommended because:\n1. Your website and business listings are consistent and well-documented.\n2. Your business location and contact details match across directories.\n3. Your services are clearly described and verifiable.\n\nRemember: AI recommendations update regularly. Ongoing monitoring is recommended to maintain your lead.");
+                    }}
+                    className="font-mono text-[10px] bg-emerald-600 text-white hover:bg-emerald-700 px-4 py-2 uppercase font-black tracking-wider transition-all rounded-none cursor-pointer shadow-[2px_2px_0px_0px_rgba(0,0,0,0.15)] border border-black/10"
+                  >
+                    [SEE WHY THIS IS]
+                  </button>
+                </div>
+              )}
+            </div>
+
           </div>
         </div>
       </div>
