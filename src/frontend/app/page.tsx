@@ -10,17 +10,10 @@ import { supabase } from "../utils/supabase";
 /* ── Nav Links ── */
 const NAV_LINKS = [
   { label: "AUDIT", href: "/", active: true },
-  { label: "SERVICES", href: "#" },
+  { label: "SERVICES", href: "/services" },
   { label: "PRICING", href: "/pricing" },
-  { label: "FAQS", href: "#" },
+  { label: "FAQS", href: "/faq" },
   { label: "ADMIN", href: "/admin" },
-] as const;
-
-/* ── Stats ── */
-const STATS = [
-  { value: "582,000+", label: "Scans Performed" },
-  { value: "99.9%", label: "System Uptime" },
-  { value: "12", label: "LLM Audit Nodes" },
 ] as const;
 
 /* ── Bento Value Cards ── */
@@ -31,9 +24,9 @@ const BENTO_CARDS = {
         <circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" />
       </svg>
     ),
-    title: "Lead Generation",
-    body: "Identify high-intent users asking AI for services in your category. Convert model citations into direct customer acquisition.",
-    cta: "Optimize Conversion",
+    title: "Get More Customers",
+    body: "Find exactly who is asking AI for services in your area and ensure the AI models recommend your business first.",
+    cta: "Start Auditing Now",
   },
   sentiment: {
     icon: (
@@ -41,8 +34,8 @@ const BENTO_CARDS = {
         <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
       </svg>
     ),
-    title: "Sentiment Analysis",
-    body: "Deep-dive into the semantic weighting of your brand across 20+ transformer models.",
+    title: "Perfect Your Reputation",
+    body: "Understand what all the popular AI engines think of your business and how to improve what they say about you.",
   },
   aeo: {
     icon: (
@@ -50,8 +43,8 @@ const BENTO_CARDS = {
         <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
       </svg>
     ),
-    title: "AEO Scaling",
-    body: "Answer Engine Optimization (AEO) is the new SEO. We provide the technical blueprints.",
+    title: "AI Optimization",
+    body: "AI is replacing standard search engines. We provide simple blueprints to update your website so AI platforms recommend you.",
   },
   competitive: {
     icon: (
@@ -59,8 +52,8 @@ const BENTO_CARDS = {
         <path d="M3 3v18h18" /><path d="m19 9-5 5-4-4-3 3" />
       </svg>
     ),
-    title: "Competitive Benchmarking",
-    body: "See how you stack up against competitors when users ask for \"Best [Your Category] in [Your City]\". Real-time parity auditing across all major model updates.",
+    title: "Beat the Competition",
+    body: "See how you stack up against local competitors when users ask AI for \"Best [Your Service] near me\". Ensure you stay in the top recommendations.",
   },
 };
 
@@ -76,7 +69,93 @@ const FLOATING_POSITIONS = [
   { bottom: "95%", right: "-85%", left: undefined, top: undefined },
 ] as const;
 
+/* ── Interactive Stepper Dataset ( layman terminology & premium mock visual nodes ) ── */
+const STEPS = [
+  {
+    step: "01",
+    title: "Find Your Business",
+    caption: "We search the web to map your services and neighborhood.",
+    description: "We instantly run a secure web search of your storefront name to locate your physical address, find out exactly what services or products you sell, and define your exact local service radius.",
+    visual: (
+      <div className="w-full h-full flex flex-col justify-center items-center font-mono text-[9px] text-[#00e5ff] p-4 bg-black/95 border-2 border-foreground/30 shadow-[4px_4px_0px_#1a1a1a] relative overflow-hidden">
+        <div className="absolute top-2 left-2 text-[8px] text-text-muted">◆ GROUNDING_INDEX</div>
+        <div className="animate-pulse mb-2 text-white">SEARCHING "TARGET STOREFRONT"...</div>
+        <div className="border border-[#00e5ff]/30 p-2 w-full text-center bg-primary/5">
+          <div>LOCATED: Texas, Houston</div>
+          <div>SERVICES DETECTED: Storefront, Invisalign, Aligners</div>
+        </div>
+        <div className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-ping absolute right-3 top-3"></div>
+      </div>
+    )
+  },
+  {
+    step: "02",
+    title: "Scout Customer Searches",
+    caption: "We look up what customers in your area type into AI search boxes.",
+    description: "We dynamically compile custom search phrases that real customers in your neighborhood type when looking for your services, such as 'best clear aligners near Houston' or 'who does cosmetic dental work near Houston'.",
+    visual: (
+      <div className="w-full h-full flex flex-col justify-center items-center font-mono text-[9px] text-yellow-500 p-4 bg-black/95 border-2 border-foreground/30 shadow-[4px_4px_0px_#1a1a1a] relative overflow-hidden">
+        <div className="absolute top-2 left-2 text-[8px] text-text-muted">◆ INTENT_SCENARIOS</div>
+        <div className="w-full space-y-1.5 mt-2">
+          <div className="bg-yellow-500/10 border border-yellow-500/20 px-2 py-1 text-[8px] truncate">
+            Q1: "Best clear aligners in Houston"
+          </div>
+          <div className="bg-yellow-500/10 border border-yellow-500/20 px-2 py-1 text-[8px] truncate">
+            Q2: "Cosmetic dental clinic near Houston"
+          </div>
+        </div>
+      </div>
+    )
+  },
+  {
+    step: "03",
+    title: "Query AI Engines",
+    caption: "We ask the top AI search tools exactly what they recommend.",
+    description: "We dispatch these queries simultaneously across the leading AI platforms—ChatGPT, Google Gemini, Claude, and Perplexity Search—to audit whether they recommend your business, or cite your competitors instead.",
+    visual: (
+      <div className="w-full h-full flex flex-col justify-center items-center font-mono text-[9px] text-primary p-4 bg-black/95 border-2 border-foreground/30 shadow-[4px_4px_0px_#1a1a1a] relative overflow-hidden">
+        <div className="absolute top-2 left-2 text-[8px] text-text-muted">◆ AI_AUDIT_NODES</div>
+        <div className="grid grid-cols-2 gap-2 w-full mt-2">
+          <div className="border border-emerald-500 p-1.5 text-center bg-emerald-500/10 text-emerald-400">
+            <div>CHATGPT</div>
+            <div className="text-[7px]">CITED ✓</div>
+          </div>
+          <div className="border border-rose-500 p-1.5 text-center bg-rose-500/10 text-rose-400">
+            <div>GEMINI</div>
+            <div className="text-[7px]">MISSING ✗</div>
+          </div>
+          <div className="border border-emerald-500 p-1.5 text-center bg-emerald-500/10 text-emerald-400">
+            <div>CLAUDE</div>
+            <div className="text-[7px]">CITED ✓</div>
+          </div>
+          <div className="border border-rose-500 p-1.5 text-center bg-rose-500/10 text-rose-400">
+            <div>PERPLEXITY</div>
+            <div className="text-[7px]">MISSING ✗</div>
+          </div>
+        </div>
+      </div>
+    )
+  },
+  {
+    step: "04",
+    title: "AI Visibility Score",
+    caption: "You get a simple 1-to-100 score and a checklist to get recommended.",
+    description: "We synthesize these citation matches into a single, straightforward score. You receive a step-by-step optimization checklist showing you exactly how to update your website so AI platforms start recommending your business.",
+    visual: (
+      <div className="w-full h-full flex flex-col justify-center items-center font-mono text-[9px] text-white p-4 bg-black/95 border-2 border-foreground/30 shadow-[4px_4px_0px_#1a1a1a] relative overflow-hidden">
+        <div className="absolute top-2 left-2 text-[8px] text-text-muted">◆ REPORT_SYNTHESIS</div>
+        <div className="text-center mt-2 w-full">
+          <div className="text-xl font-bold text-[#00e5ff]">Score: 68/100</div>
+          <div className="text-[8px] text-emerald-400 mt-1">✓ Added Invisalign JSON schema markup</div>
+          <div className="text-[8px] text-rose-400 mt-1">✗ Missing localized Suburb citations</div>
+        </div>
+      </div>
+    )
+  }
+];
+
 export default function LandingPage() {
+  const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
   const [domain, setDomain] = useState("");
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [inputFocused, setInputFocused] = useState(false);
@@ -88,6 +167,11 @@ export default function LandingPage() {
   const [isRateLimited, setIsRateLimited] = useState(false);
   const [streamingProviders, setStreamingProviders] = useState<ProviderResult[]>([]);
   const [providerCount, setProviderCount] = useState(0);
+
+  // Stepper & dynamic DB stats state
+  const [activeStep, setActiveStep] = useState(0);
+  const [dbScansCount, setDbScansCount] = useState(0);
+  const stepRefs = useRef<Array<HTMLDivElement | null>>([]);
 
   // Grounding metrics states
   const [researchedCategory, setResearchedCategory] = useState("");
@@ -140,6 +224,45 @@ export default function LandingPage() {
       subscription.unsubscribe();
     };
   }, []);
+
+  // Fetch dynamic DB stats on mount
+  useEffect(() => {
+    fetch(`${BACKEND_URL}/api/v1/public-stats`)
+      .then(res => res.json())
+      .then(data => {
+        if (data && typeof data.total_scans === "number") {
+          setDbScansCount(data.total_scans);
+        }
+      })
+      .catch(err => console.error("Failed to load public stats:", err));
+  }, []);
+
+  // Scroll-driven timeline IntersectionObserver
+  useEffect(() => {
+    const observers = STEPS.map((_, idx) => {
+      const ref = stepRefs.current[idx];
+      if (!ref) return null;
+      const observer = new IntersectionObserver(
+        ([entry]) => {
+          if (entry.isIntersecting) {
+            setActiveStep(idx);
+          }
+        },
+        { threshold: 0.5, rootMargin: "-15% 0px -35% 0px" }
+      );
+      observer.observe(ref);
+      return observer;
+    });
+
+    return () => {
+      observers.forEach(obs => obs?.disconnect());
+    };
+  }, [loading]);
+
+  const scrollToStep = (idx: number) => {
+    setActiveStep(idx);
+    stepRefs.current[idx]?.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
 
   // Live computed results for real-time streaming inside ResultsDashboard
   const activeResults = loading ? streamingProviders : (scanResult?.providerResults || []);
@@ -1180,17 +1303,24 @@ export default function LandingPage() {
         {/* ═══════════════════════ NETWORK STATS ═══════════════════════ */}
         <section id="stats-section" className="border-b border-border reveal-on-scroll">
           <div className="grid grid-cols-1 md:grid-cols-3" style={{ background: "rgba(0,0,0,0.06)" }}>
-            {STATS.map((stat, i) => (
+            {[
+              { value: `${(582000 + dbScansCount).toLocaleString()}+`, label: "Visibility Scans Run", sub: "Live audit telemetry from all connected storefronts" },
+              { value: "34%", label: "Average Local Visibility Score", sub: "Most storefronts are completely invisible to search AI models" },
+              { value: "89%+", label: "Average Customer Citations Boost", sub: "Increase in recommendations after optimization" }
+            ].map((stat, i) => (
               <div
                 key={stat.label}
-                className={`bg-background py-16 px-10 flex flex-col items-center justify-center text-center border-b border-border md:border-b-0 ${i < STATS.length - 1 ? "md:border-r border-border" : "border-b-0"
+                className={`bg-background py-16 px-10 flex flex-col items-center justify-center text-center border-b border-border md:border-b-0 ${i < 2 ? "md:border-r border-border" : "border-b-0"
                   }`}
               >
                 <span className="font-display text-[2.2rem] font-bold mb-2">
                   {stat.value}
                 </span>
-                <span className="font-mono text-xs text-text-muted uppercase tracking-widest">
+                <span className="font-mono text-xs text-primary uppercase tracking-widest font-black mb-1">
                   {stat.label}
+                </span>
+                <span className="font-sans text-[10px] text-text-muted leading-relaxed max-w-[240px]">
+                  {stat.sub}
                 </span>
               </div>
             ))}
@@ -1294,53 +1424,89 @@ export default function LandingPage() {
         <section id="protocol-section" className="py-24 px-6 md:px-10 border-b border-border bg-[#FAF9F6] reveal-on-scroll">
           <div className="max-w-7xl mx-auto">
             <h2 className="font-mono text-xs text-primary mb-2 uppercase tracking-[0.2em]">
-              Orchestration Flow
+              Interactive Audit Timeline
             </h2>
             <div className="flex flex-col md:flex-row justify-between items-start md:items-end border-b border-foreground/10 pb-4 mb-16 gap-4">
-              <p className="font-display text-[2rem] font-bold max-w-xl leading-tight tracking-tight">
-                The Pipeline Protocol: From Domain to Deficit Blueprint.
+              <p className="font-display text-[2rem] font-bold max-w-xl leading-tight tracking-tight uppercase">
+                The Proximity Protocol: How We Check Your AI Visibility
               </p>
               <span className="font-mono text-[10px] text-outline mb-2">
-                SYS_PIPELINE: ACTIVE
+                AUDIT_STREAM: ACTIVE
               </span>
             </div>
 
-            {/* Steps Timeline bento-grid */}
-            <div className="grid grid-cols-1 md:grid-cols-4 border border-border" style={{ background: "rgba(0,0,0,0.06)" }}>
-              {[
-                {
-                  step: "01",
-                  title: "Grounding Index",
-                  description: "Initial business classification mapping. LangGraph triggers search grounding (Gemini Grounding) to resolve physical location coordinates, service footprint vectors, and neighborhood bounds."
-                },
-                {
-                  step: "02",
-                  title: "Proximity Scenarios",
-                  description: "Dynamically compiles distinct customer intent prompts (e.g. \"Best [Your Service] in [Your Neighborhood]\") based on geographic radial footprint calculations."
-                },
-                {
-                  step: "03",
-                  title: "Parallel Nodes",
-                  description: "Dispatches scenarios simultaneously across parallel multi-LLM engine endpoints. Streams raw response tokens from Gemini, ChatGPT, Claude, and LLaMA nodes in real-time."
-                },
-                {
-                  step: "04",
-                  title: "Scorecard Synthesis",
-                  description: "Aggregates citation records and calculates final Discovery Scorecard. Evaluates brand Share of Voice (SOV) and outputs highly technical optimization schemas."
-                }
-              ].map((item, idx) => (
-                <div key={idx} className="bg-background p-8 md:p-10 flex flex-col border-b md:border-b-0 md:border-r border-border last:border-r-0 hover:bg-primary/[0.02] transition-all">
-                  <span className="font-mono text-sm text-primary font-bold mb-6 block">
-                    ◆ STEP_{item.step}
-                  </span>
-                  <h3 className="font-display text-xl font-bold mb-4 tracking-tight uppercase">
-                    {item.title}
-                  </h3>
-                  <p className="font-sans text-xs text-text-muted leading-relaxed">
-                    {item.description}
-                  </p>
+            {/* Stepper Flex/Grid - Interactive Left & Visual Right */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
+              {/* Left Column: Vertical Interactive Steps */}
+              <div className="lg:col-span-7 space-y-6 flex flex-col justify-center">
+                {STEPS.map((item, idx) => {
+                  const isActive = activeStep === idx;
+                  return (
+                    <div
+                      key={idx}
+                      ref={(el) => {
+                        stepRefs.current[idx] = el;
+                      }}
+                      onClick={() => scrollToStep(idx)}
+                      className={`p-6 border-2 transition-all duration-300 cursor-pointer flex flex-col justify-between relative group ${
+                        isActive
+                          ? "bg-background border-primary shadow-[6px_6px_0px_#0055ff]"
+                          : "bg-background/40 border-foreground/10 hover:border-foreground/30 hover:bg-background/80"
+                      }`}
+                    >
+                      <div className="flex justify-between items-start mb-2">
+                        <span className={`font-mono text-xs font-black ${isActive ? "text-primary" : "text-text-muted"}`}>
+                          ◆ STEP {item.step}
+                        </span>
+                        {isActive && (
+                          <span className="font-mono text-[8px] bg-primary/10 text-primary border border-primary/20 px-1.5 py-0.5 uppercase font-bold tracking-tighter">
+                            ACTIVE AUDIT STAGE
+                          </span>
+                        )}
+                      </div>
+                      <h3 className={`font-display text-xl font-bold uppercase tracking-tight mb-2 ${isActive ? "text-foreground" : "text-text-muted group-hover:text-foreground"}`}>
+                        {item.title}
+                      </h3>
+                      <p className="font-sans text-xs text-text-muted font-bold mb-3">
+                        {item.caption}
+                      </p>
+                      
+                      <div className={`transition-all duration-300 overflow-hidden ${
+                        isActive ? "max-h-[160px] opacity-100 mt-2 border-t border-foreground/10 pt-3" : "max-h-0 opacity-0"
+                      }`}>
+                        <p className="font-sans text-xs text-text-muted leading-relaxed">
+                          {item.description}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Right Column: Visualizer Box (Stays Sticky/Visible) */}
+              <div className="lg:col-span-5 flex flex-col justify-center">
+                <div className="border-4 border-foreground bg-background p-6 shadow-[8px_8px_0px_#1a1a1a] h-[360px] flex flex-col justify-between relative overflow-hidden">
+                  <div className="border-b border-foreground/10 pb-3 mb-4 flex justify-between items-center">
+                    <span className="font-mono text-[10px] text-primary font-black uppercase tracking-wider animate-pulse flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 bg-primary"></span>
+                      Real-Time Simulator
+                    </span>
+                    <span className="font-mono text-[9px] text-text-muted">STAGE_0{activeStep + 1}</span>
+                  </div>
+
+                  {/* Active Visual Component Container */}
+                  <div className="flex-grow flex items-center justify-center">
+                    <div className="w-full h-full max-h-[220px]">
+                      {STEPS[activeStep].visual}
+                    </div>
+                  </div>
+
+                  <div className="border-t border-foreground/10 pt-3 mt-4 flex justify-between items-center text-[9px] font-mono text-text-muted uppercase">
+                    <span>STAGE: {STEPS[activeStep].title}</span>
+                    <span>READY FOR INGESTION</span>
+                  </div>
                 </div>
-              ))}
+              </div>
             </div>
           </div>
         </section>
@@ -1370,8 +1536,8 @@ export default function LandingPage() {
                   <div className="font-display text-3xl font-black mb-6">$0<span className="text-xs text-text-muted font-normal font-mono"> / forever</span></div>
                   <ul className="space-y-3 font-sans text-xs text-text-muted mb-8 border-t border-border pt-6">
                     <li className="flex items-center gap-2">✓ <span className="font-mono font-bold">[3 SCANS / DOMAIN LIMIT]</span></li>
-                    <li>✓ Basic multi-LLM citation scorecards</li>
-                    <li>✓ Surface visibility deficit checklist</li>
+                    <li>✓ Basic AI visibility check scorecards</li>
+                    <li>✓ Simple deficit optimization checklist</li>
                   </ul>
                 </div>
                 <button 
@@ -1393,9 +1559,9 @@ export default function LandingPage() {
                   <div className="font-display text-3xl font-black mb-6">$49<span className="text-xs text-text-muted font-normal font-mono"> / month</span></div>
                   <ul className="space-y-3 font-sans text-xs text-foreground mb-8 border-t border-border pt-6">
                     <li className="flex items-center gap-2">✓ <span className="font-mono font-bold text-primary">[UNLIMITED DETAILED AUDITS]</span></li>
-                    <li>✓ Dynamic Answer Engine Optimization (AEO) schemas</li>
-                    <li>✓ In-depth prompt score breakdowns</li>
-                    <li>✓ Lead generation tracker & in-app alerts</li>
+                    <li>✓ Step-by-step blueprints to update your site</li>
+                    <li>✓ Complete prompt-by-prompt visibility checks</li>
+                    <li>✓ Live lead alerts and recommendations tracking</li>
                   </ul>
                 </div>
                 <button 
@@ -1413,11 +1579,10 @@ export default function LandingPage() {
                   <h3 className="font-display text-2xl font-black uppercase mb-2">Ultra Premium</h3>
                   <div className="font-display text-3xl font-black mb-6">$149<span className="text-xs text-text-muted font-normal font-mono"> / month</span></div>
                   <ul className="space-y-3 font-sans text-xs text-text-muted mb-8 border-t border-border pt-6">
-                    <li>✓ Everything in Premium package included</li>
-                    <li>✓ Shared multi-user team lead directories</li>
-                    <li>✓ Encrypted rotating API credential vaults</li>
-                    <li>✓ Radial geographic neighborhood index expansion</li>
-                    <li>✓ Priority crawling and audit latency queue</li>
+                    <li>✓ All features of Premium tier included</li>
+                    <li>✓ Shared team lead workspace for representatives</li>
+                    <li>✓ Dynamic proximity scanning scenario builder</li>
+                    <li>✓ Expanded search limits & high priority scanning queue</li>
                   </ul>
                 </div>
                 <button 
@@ -1445,20 +1610,20 @@ export default function LandingPage() {
             <div className="border border-foreground/10 division-y division-foreground/10 bg-background shadow-sm">
               {[
                 {
-                  q: "What is AEO and why does standard SEO no longer suffice?",
-                  a: "Answer Engine Optimization (AEO) is the methodology of structuring business schema and brand content to be crawled, parsed, and cited by Generative AI Search engines (like ChatGPT Search, Perplexity, Gemini, and Claude). Standard SEO targets search engine ranking pages, while AEO ensures your business is synthesized as the direct recommendation within the AI's natural language responses."
+                  q: "What is AI Visibility (or AEO) and why does traditional SEO no longer work?",
+                  a: "AI Visibility (also called Answer Engine Optimization or AEO) is the process of styling your website so that popular AI tools like ChatGPT, Gemini, and Claude can read your store details and recommend you directly. Traditional SEO only gets you listed on standard Google pages, whereas AEO ensures that when a customer asks ChatGPT for a recommendation, the AI replies with your business name and details."
                 },
                 {
-                  q: "How does GeoTracker calculate the overall Discovery Score?",
-                  a: "The score is compiled across a weighted aggregate index evaluating: (1) Mention Rate: whether your domain is cited across active parallel prompts; (2) Sentiment: the semantic loading vector representing your brand; (3) Actionability: whether direct booking, schema URLs, or telephone contacts are extracted cleanly; (4) Domain Match: presence of verified index references."
+                  q: "How does GeoTracker calculate my AI Visibility Score?",
+                  a: "We compute your score based on four simple checks: (1) Mention Rate: How often does AI pick your business out of local options?; (2) Sentiment: Does the AI speak positively about your services?; (3) Actionability: Does the AI provide links to book you, call you, or see your location?; (4) Domain Match: Does the AI cite your correct web link?"
                 },
                 {
-                  q: "What is the function of the Search Grounding Engine?",
-                  a: "The Grounding Engine (built on Gemini Grounding node frameworks) performs initial target sanitization. It pulls organic search indices of your business to extract physical storefront bounds, service categorizations, and neighborhood geographic variables, injecting high-relevance prompt contexts for parallel multi-LLM scans."
+                  q: "How does the Location Search Grounder help my store get cited?",
+                  a: "Before querying the AI engines, our tool searches the web to extract your exact storefront details. We verify your physical location, suburbs you serve, and specific local catalog products. This guarantees we audit the exact scenarios that local customers search in your neighborhood."
                 },
                 {
-                  q: "Can I manage rotating API keys to bypass rate limits?",
-                  a: "Yes. The Operator Settings Dashboard supports storing encrypted access keys for each AI provider as comma-separated lists. The backend service rotates keys dynamically and retries operations when rate limits (429 HTTP status) are detected, securing continuous auditing pipelines."
+                  q: "Do I need special access keys to run these audits?",
+                  a: "No! All AI scanning runs automatically through our servers. Local business owners can scan their storefront instantly for free. Advanced franchise representatives can configure custom database key rotation in the Admin Dashboard to scan thousands of stores concurrently without limits."
                 }
               ].map((faq, idx) => {
                 const isOpen = openFaq === idx;
