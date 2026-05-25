@@ -9,6 +9,8 @@ export const MARKETING_NAV_LINKS: NavLink[] = [
   { label: "Services", href: "/services", match: "prefix" },
   { label: "Pricing", href: "/pricing", match: "prefix" },
   { label: "FAQ", href: "/faq", match: "prefix" },
+  /** Visible to all users during prototype — no role gate yet */
+  { label: "Admin", href: "/admin", match: "prefix" },
 ];
 
 export function isNavActive(pathname: string, link: NavLink): boolean {
