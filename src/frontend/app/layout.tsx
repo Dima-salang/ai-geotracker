@@ -21,9 +21,15 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "GeoTracker | Global AI Auditing System",
+  title: "GeoTracker | See if AI recommends your business",
   description:
-    "Quantify how LLMs like ChatGPT, Gemini, and Perplexity recommend your business to global users. AI visibility auditing for local businesses.",
+    "Free AI visibility check for local businesses. Learn whether ChatGPT, Gemini, and other tools recommend you—and get a simple plan to win more customers.",
+};
+
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

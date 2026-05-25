@@ -69,6 +69,18 @@ body {
   color: var(--foreground);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+/* Focus rings for keyboard users (modern a11y) */
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+a,
+button {
+  touch-action: manipulation;
 }
 
 /* ── Blueprint Background Grid ── */
