@@ -15,6 +15,8 @@ interface User {
   tier: string;
   created_at: string;
   last_scan_at: string | null;
+  team_id: string | null;
+  is_verified: boolean;
 }
 
 interface Organization {
@@ -22,9 +24,15 @@ interface Organization {
   name: string;
 }
 
+interface Team {
+  id: string;
+  name: string;
+}
+
 export default function UserCRUD() {
   const [users, setUsers] = useState<User[]>([]);
   const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [teams, setTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState("");
   
@@ -46,6 +54,9 @@ export default function UserCRUD() {
   const [formPhone, setFormPhone] = useState("");
   const [formTier, setFormTier] = useState("free");
   const [formOrgId, setFormOrgId] = useState("");
+  const [formRole, setFormRole] = useState("user");
+  const [formTeamId, setFormTeamId] = useState("");
+  const [formIsVerified, setFormIsVerified] = useState(true);
   
   const [consoleLogs, setConsoleLogs] = useState<string[]>([]);
   const consoleContainerRef = useRef<HTMLDivElement>(null);
@@ -65,7 +76,7 @@ export default function UserCRUD() {
 
   const loadData = async () => {
     setLoading(true);
-    addLog("LOAD: Fetching users & organization directories...");
+    addLog("LOAD: Fetching users, teams & organization directories...");
     try {
       // Load organizations for dropdown
       const orgResponse = await fetch(`${BACKEND_URL}/api/v1/organizations?limit=100`);
@@ -73,13 +84,19 @@ export default function UserCRUD() {
       const orgData = await orgResponse.json();
       setOrganizations(orgData);
 
+      // Load teams for dropdown
+      const teamResponse = await fetch(`${BACKEND_URL}/api/v1/teams?limit=100`);
+      if (!teamResponse.ok) throw new Error("Failed to load teams");
+      const teamData = await teamResponse.json();
+      setTeams(teamData);
+
       // Load users
       const userResponse = await fetch(`${BACKEND_URL}/api/v1/users?limit=100&offset=0`);
       if (!userResponse.ok) throw new Error("Failed to load users");
       const userData = await userResponse.json();
       setUsers(userData);
 
-      addLog(`LOAD_SUCCESS: Loaded ${userData.length} users and ${orgData.length} organizations.`);
+      addLog(`LOAD_SUCCESS: Loaded ${userData.length} users, ${teamData.length} teams, and ${orgData.length} organizations.`);
     } catch (err: any) {
       console.error(err);
       setErrorMsg("Failed to load users directory data.");
@@ -104,6 +121,9 @@ export default function UserCRUD() {
     setFormPhone("");
     setFormTier("free");
     setFormOrgId(organizations[0]?.id || "");
+    setFormRole("user");
+    setFormTeamId("");
+    setFormIsVerified(true);
     setIsModalOpen(true);
   };
 
@@ -116,6 +136,9 @@ export default function UserCRUD() {
     setFormPhone(user.phone || "");
     setFormTier(user.tier);
     setFormOrgId(user.organization_id || "");
+    setFormRole(user.role || "user");
+    setFormTeamId(user.team_id || "");
+    setFormIsVerified(user.is_verified);
     setIsModalOpen(true);
   };
 
@@ -134,6 +157,9 @@ export default function UserCRUD() {
       phone: formPhone || null,
       tier: formTier,
       organization_id: formOrgId || null,
+      role: formRole,
+      team_id: formTeamId || null,
+      is_verified: formIsVerified,
     };
 
     const isCreate = !editingUser;
@@ -153,7 +179,10 @@ export default function UserCRUD() {
           last_name: payload.last_name,
           email: payload.email,
           phone: payload.phone,
-          tier: payload.tier
+          tier: payload.tier,
+          role: payload.role,
+          team_id: payload.team_id,
+          is_verified: payload.is_verified
         }),
       });
 
@@ -193,6 +222,26 @@ export default function UserCRUD() {
     } catch (err: any) {
       console.error(err);
       addLog(`[ERROR] DELETE_FAIL: Delete failed: ${err.message}`);
+    }
+  };
+
+
+  const handleApproveAgent = async (id: string, email: string) => {
+    addLog(`APPROVE: Activating and verifying agent profile [${email}]...`);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/v1/users/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_verified: true }),
+      });
+      if (!res.ok) {
+        throw new Error("Activation update failed");
+      }
+      addLog(`[SUCCESS] ACTIVATE: Agent [${email}] successfully activated.`);
+      loadData();
+    } catch (err: any) {
+      console.error(err);
+      addLog(`[ERROR] ACTIVATE_FAIL: Activation failed: ${err.message}`);
     }
   };
 
@@ -301,14 +350,18 @@ export default function UserCRUD() {
                   <tr className="bg-surface-container-low border-b border-foreground/10 font-mono uppercase text-text-muted">
                     <th className="p-4 font-bold">Name</th>
                     <th className="p-4 font-bold">Email</th>
+                    <th className="p-4 font-bold">Role</th>
+                    <th className="p-4 font-bold">Status</th>
                     <th className="p-4 font-bold">Access Tier</th>
                     <th className="p-4 font-bold">Organization</th>
+                    <th className="p-4 font-bold">Team</th>
                     <th className="p-4 font-bold text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {paginatedUsers.map((u) => {
                     const org = organizations.find((o) => o.id === u.organization_id);
+                    const linkedTeam = teams.find((t) => t.id === u.team_id);
                     const isDefault = u.id === "00000000-0000-0000-0000-000000000001";
                     return (
                       <tr key={u.id} className="border-b border-foreground/5 hover:bg-surface-container-lowest">
@@ -323,6 +376,32 @@ export default function UserCRUD() {
                         <td className="p-4 font-mono text-foreground/80">{u.email}</td>
                         <td className="p-4 font-mono">
                           <span className={`px-2 py-0.5 font-bold uppercase ${
+                            u.role === "admin" ? "bg-amber-600/10 text-amber-600 border border-amber-600/20" :
+                            u.role === "team_leader" ? "bg-sky-600/10 text-sky-600 border border-sky-600/20" :
+                            u.role === "agent" ? "bg-indigo-600/10 text-indigo-600 border border-indigo-600/20" :
+                            u.role === "client" ? "bg-teal-600/10 text-teal-600 border border-teal-600/20" :
+                            "bg-foreground/5 text-text-muted border border-foreground/10"
+                          }`}>
+                            {u.role || "user"}
+                          </span>
+                        </td>
+                        <td className="p-4 font-mono">
+                          {["agent", "team_leader"].includes(u.role) ? (
+                            u.is_verified ? (
+                              <span className="px-2 py-0.5 font-bold uppercase bg-emerald-600/10 text-emerald-600 border border-emerald-600/20">
+                                ACTIVE
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 font-bold uppercase bg-amber-600/10 text-amber-600 border border-amber-600/20 animate-pulse">
+                                PENDING
+                              </span>
+                            )
+                          ) : (
+                            <span className="text-text-muted">—</span>
+                          )}
+                        </td>
+                        <td className="p-4 font-mono">
+                          <span className={`px-2 py-0.5 font-bold uppercase ${
                             u.tier === "enterprise" ? "bg-primary/10 text-primary border border-primary/20" :
                             u.tier === "premium" ? "bg-emerald-600/10 text-emerald-600 border border-emerald-600/20" :
                             "bg-foreground/5 text-text-muted border border-foreground/10"
@@ -331,7 +410,16 @@ export default function UserCRUD() {
                           </span>
                         </td>
                         <td className="p-4 font-mono text-foreground/60">{org ? org.name : "None (Individual)"}</td>
+                        <td className="p-4 font-mono text-foreground/60">{linkedTeam ? linkedTeam.name : "None"}</td>
                         <td className="p-4 text-right flex justify-end gap-3">
+                          {!u.is_verified && ["agent", "team_leader"].includes(u.role) && (
+                            <button
+                              onClick={() => handleApproveAgent(u.id, u.email || "")}
+                              className="font-mono text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 uppercase font-bold transition-all"
+                            >
+                              [Approve]
+                            </button>
+                          )}
                           <button
                             onClick={() => handleOpenEditModal(u)}
                             className="font-mono text-[10px] border border-foreground/20 hover:border-foreground text-foreground px-3 py-1 uppercase font-bold transition-all"
@@ -477,6 +565,51 @@ export default function UserCRUD() {
                     </select>
                   </div>
                 </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="font-mono text-[10px] text-text-muted uppercase block mb-1 font-bold">User Role</label>
+                    <select
+                      value={formRole}
+                      onChange={(e) => setFormRole(e.target.value)}
+                      className="w-full bg-background border border-foreground/20 focus:border-primary focus:outline-none font-mono text-xs px-3 py-2 text-foreground"
+                    >
+                      <option value="user">USER</option>
+                      <option value="client">CLIENT</option>
+                      <option value="agent">AGENT</option>
+                      <option value="team_leader">TEAM LEADER</option>
+                      <option value="admin">ADMIN</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="font-mono text-[10px] text-text-muted uppercase block mb-1 font-bold">Agent Team Assignment</label>
+                    <select
+                      value={formTeamId}
+                      onChange={(e) => setFormTeamId(e.target.value)}
+                      className="w-full bg-background border border-foreground/20 focus:border-primary focus:outline-none font-mono text-xs px-3 py-2 text-foreground"
+                    >
+                      <option value="">NO TEAM ASSIGNMENT</option>
+                      {teams.map((t) => (
+                        <option key={t.id} value={t.id}>{t.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {["agent", "team_leader"].includes(formRole) && (
+                  <div className="flex items-center gap-2 border border-foreground/10 bg-surface-container-low p-3">
+                    <input
+                      type="checkbox"
+                      id="form-is-verified"
+                      checked={formIsVerified}
+                      onChange={(e) => setFormIsVerified(e.target.checked)}
+                      className="w-4 h-4 accent-primary"
+                    />
+                    <label htmlFor="form-is-verified" className="font-mono text-[10px] text-foreground uppercase font-bold cursor-pointer select-none">
+                      Verify & Activate Operator Profile
+                    </label>
+                  </div>
+                )}
 
                 <div className="pt-4 border-t border-foreground/10 flex justify-end gap-3">
                   <button
