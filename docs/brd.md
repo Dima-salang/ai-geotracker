@@ -32,40 +32,41 @@ The product serves as a lead generation funnel for Iozera's broader product ecos
 - As a business owner, I can sign up with Google or LinkedIn so I don't need another password
 - As a business owner, I can see pricing before I sign up
 
-### Quick Scan (Freemium)
-- As a business owner, I can enter my business name, website, industry, and location
-- As a business owner, I see scan progress streaming in so I don't feel left waiting
-- As a business owner, I receive a visibility score for each LLM provider
-- As a business owner, I see an overall visibility score
-- As a business owner, I see which providers mention my business and which don't
+### Subscription & Audit Tiers
 
-### Full Audit (Paid)
-- As a paying subscriber, I get competitor comparison reports
-- As a paying subscriber, I get actionable SEO recommendations
-- As a paying subscriber, I can run unlimited audits
-- As a paying subscriber, I can track visibility changes over time
-- As a paying subscriber, I get monthly visibility reports sent to my email
+#### Free Tier ($0/forever)
+*For business owners who want to know where they stand.*
+- As a free user, I get a **Real-Time 25-Point Visibility Check** (5x5 matrix).
+- As a free user, I see my **AI Visibility Score (0–100)** to quantify initial standing.
+- As a free user, I get a **Top 3 Missing Citation Gaps** summary.
+- As a free user, I receive a **Weekly Visibility Audit Email** pulse report.
+- As a free user, I can view the **Competitor Comparison Table** index.
 
-### Upsell / Conversion
-- As a non-paying user, I see what the Full Audit includes and a prompt to upgrade
-- As a non-paying user, I can retry my Quick Scan after 30 days (or similar cooldown)
+#### Premium Tier ($49/month)
+*For owners who want the full diagnostic, not just the symptom.*
+- As a Premium subscriber, I get everything in the Free tier, plus:
+- A comprehensive **Step-by-Step AI Repair Plan** detailing recommended citation adjustments.
+- High-fidelity **Direct Competitor Benchmarks** for top three rivals.
+- A granular **Local Suburb Coverage Map** assessing adjacent suburbs visibility.
+- A **Priority Verified Audit Badge** on my business profile.
+- **Unlimited On-Demand Audits** without rate limits or cooldowns.
 
-## 5. Scope
+#### Ultra Premium Tier ($150/month)
+*For owners who want the problem fixed, not just measured.*
+- As an Ultra Premium subscriber, I get everything in the Premium tier, plus:
+- **Done-For-You AI Optimization** managed by human-in-the-loop experts.
+- **Continuous Citation Bug Fixes** to repair faulty or missing links in model indexes.
+- An **AI-Ready Storefront Page** hosted and optimized for instant model crawling.
+- A **Personalized Search Growth Plan** content roadmap.
+- A **Direct line to our AI Specialist** for direct consultation.
 
-### In Scope (MVP)
-- User authentication (Google + LinkedIn OAuth via Supabase)
-- Quick Scan: business submission, multi-provider scan, streaming results, visibility score
-- Public landing page, pricing page, services page, FAQs page
-- Dashboard showing scan history
-- Basic scanning credit/boundary to prevent API abuse
+### Scope
 
-### In Scope (Post-MVP)
-- Full Audit with competitor analysis
-- Subscription management
-- Admin dashboard for operators
-- User settings page
-- Historical trend tracking
-- Batch/agency workflows
+- **User authentication**: Supabase Google & LinkedIn OAuth
+- **Public access**: Landing page, Services, FAQs, and a dedicated high-converting **Pricing Page (/pricing)**.
+- **Interactive scan console**: Streaming visibility audits, removing black terminal console in favor of a polished step checklist.
+- **Customer workspace**: Multi-panel sidebar workspace (PROFILE, AUDIT, HISTORY, SETTINGS) with simulated Premium and Ultra Premium upgrade options.
+
 
 ### Out of Scope
 - Direct integration with business listing platforms (Google Business Profile, Yelp)
