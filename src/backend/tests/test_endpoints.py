@@ -19,19 +19,27 @@ def fixture_db_session():
     SessionTesting = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     db = SessionTesting()
     try:
-        # Seed default org and user to satisfy foreign keys
-        org = Organization(id=uuid.UUID("00000000-0000-0000-0000-000000000000"), name="Default Org")
-        user = User(
-            id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
-            organization_id=org.id,
-            email="manager@corporatefranchise.com",
-            first_name="Alex",
-            last_name="Manager",
-            tier="enterprise"
-        )
-        db.add(org)
-        db.add(user)
-        db.commit()
+        org_id = uuid.UUID("00000000-0000-0000-0000-000000000000")
+        org = db.query(Organization).filter(Organization.id == org_id).first()
+        if not org:
+            org = Organization(id=org_id, name="Default Org")
+            db.add(org)
+            db.commit()
+            db.refresh(org)
+
+        user_id = uuid.UUID("00000000-0000-0000-0000-000000000001")
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            user = User(
+                id=user_id,
+                organization_id=org.id,
+                email="manager@corporatefranchise.com",
+                first_name="Alex",
+                last_name="Manager",
+                tier="enterprise"
+            )
+            db.add(user)
+            db.commit()
         yield db
     finally:
         db.close()
@@ -497,5 +505,93 @@ def test_scan_rate_limiting_premium_bypass(client, db_session):
         
         # Should NOT be blocked with 403 (should successfully call stream and return 200)
         assert res.status_code == 200
+
+
+def test_team_crud_and_agent_registration_endpoints(db_session):
+    from app.models.database import get_db
+    from app.main import app
+    
+    def override_get_db():
+        try:
+            yield db_session
+        finally:
+            pass
+    app.dependency_overrides[get_db] = override_get_db
+    
+    from fastapi.testclient import TestClient
+    client = TestClient(app)
+    
+    # 1. Create a Team
+    res = client.post("/api/v1/teams", json={"name": "Initial Team"})
+    assert res.status_code == 200
+    team_data = res.json()
+    team_id = team_data["id"]
+    
+    # 2. Update the Team
+    res = client.put(f"/api/v1/teams/{team_id}", json={"name": "Renamed Team"})
+    assert res.status_code == 200
+    assert res.json()["name"] == "Renamed Team"
+    
+    # 3. Agent self-registration
+    # Create the user to be logged in
+    user_id = uuid.uuid4()
+    user = User(
+        id=user_id,
+        email="new_agent@iozera.ai",
+        role="user"
+    )
+    db_session.add(user)
+    db_session.commit()
+    
+    # Mock authentication get_current_user_optional
+    from app.api.v1.endpoints import get_current_user_optional
+    def override_get_current_user_optional():
+        return user
+        
+    app.dependency_overrides[get_current_user_optional] = override_get_current_user_optional
+    
+    res = client.post("/api/v1/users/register-agent", json={
+        "first_name": "Jack",
+        "last_name": "Agent",
+        "phone": "555-0199",
+        "team_id": team_id
+    })
+    
+    assert res.status_code == 200
+    updated_user = res.json()
+    assert updated_user["role"] == "agent"
+    assert updated_user["first_name"] == "Jack"
+    assert updated_user["team_id"] == team_id
+    assert updated_user["is_verified"] is False
+    
+    # Mock check_verified_user to return our actual unverified agent state
+    from app.api.v1.endpoints import check_verified_user
+    def override_check_verified_user():
+        from app.models.schema import User
+        db_user = db_session.query(User).filter(User.id == user_id).first()
+        if db_user and db_user.role in ("agent", "team_leader") and not db_user.is_verified:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=403, detail="Unverified agent blocked")
+        return db_user
+    app.dependency_overrides[check_verified_user] = override_check_verified_user
+    
+    # 4. Request leads (should fail with 403 because agent is unverified)
+    res = client.get("/api/v1/leads")
+    assert res.status_code == 403
+    
+    # 5. Approve the agent (Admin PUT /users/{id})
+    res = client.put(f"/api/v1/users/{user_id}", json={"is_verified": True})
+    assert res.status_code == 200
+    assert res.json()["is_verified"] is True
+    
+    # 6. Request leads again (should succeed with 200 now!)
+    res = client.get("/api/v1/leads")
+    assert res.status_code == 200
+    
+    # 7. Delete the Team
+    res = client.delete(f"/api/v1/teams/{team_id}")
+    assert res.status_code == 200
+    
+    app.dependency_overrides.clear()
 
 
