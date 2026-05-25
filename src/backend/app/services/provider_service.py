@@ -73,6 +73,25 @@ class ProviderService:
                 ProviderConfig.model == data.model
             ).first()
 
+        final_api_key = data.api_key
+        if final_api_key and "__NO_CHANGE__" in final_api_key and existing:
+            existing_keys = [k.strip() for k in existing.api_key.split(",") if k.strip()]
+            incoming_keys = [k.strip() for k in final_api_key.split(",")]
+            
+            if incoming_keys == ["__NO_CHANGE__"]:
+                final_api_key = ",".join(existing_keys)
+            else:
+                reconstructed_keys = []
+                for i, incoming_key in enumerate(incoming_keys):
+                    if incoming_key == "__NO_CHANGE__":
+                        if i < len(existing_keys):
+                            reconstructed_keys.append(existing_keys[i])
+                        else:
+                            reconstructed_keys.append("")
+                    else:
+                        reconstructed_keys.append(incoming_key)
+                final_api_key = ",".join(reconstructed_keys)
+
         if existing:
             existing.provider = data.provider
             existing.model = data.model
@@ -80,8 +99,8 @@ class ProviderService:
             existing.api_base = data.api_base
             existing.is_active = data.is_active
             existing.timeout_seconds = data.timeout_seconds
-            if data.api_key and data.api_key != "__NO_CHANGE__":
-                existing.api_key = data.api_key  # Triggers automatic encryption
+            if final_api_key and final_api_key != "__NO_CHANGE__":
+                existing.api_key = final_api_key  # Triggers automatic encryption
             db.commit()
             db.refresh(existing)
             return existing
@@ -95,7 +114,7 @@ class ProviderService:
             is_active=data.is_active,
             timeout_seconds=data.timeout_seconds
         )
-        config.api_key = data.api_key  # Triggers automatic encryption
+        config.api_key = final_api_key  # Triggers automatic encryption
         db.add(config)
         db.commit()
         db.refresh(config)
@@ -186,76 +205,142 @@ class ProviderService:
         merged_args = {**call_args, **kwargs}
         model_name = merged_args.get("model", "")
 
+        # Extract comma-separated keys
+        api_keys_str = merged_args.get("api_key", "")
+        if isinstance(api_keys_str, str) and api_keys_str:
+            api_keys = [k.strip() for k in api_keys_str.split(",") if k.strip()]
+        else:
+            api_keys = []
+
+        if not api_keys:
+            api_keys = [api_keys_str or None]
+
         # Check if running in a unit test environment where litellm.acompletion is mocked
         from unittest.mock import Mock
         is_mocked = isinstance(litellm.acompletion, Mock)
 
+        # Helper function for checking rate limits
+        def _is_rate_limit_exception(e: Exception) -> bool:
+            err_str = str(e).lower()
+            status_code = getattr(e, "status_code", None)
+            if status_code == 429:
+                return True
+            if "429" in err_str or "rate_limit" in err_str or "rate limit" in err_str or "quota" in err_str:
+                return True
+            try:
+                import litellm.exceptions
+                if isinstance(e, litellm.exceptions.RateLimitError):
+                    return True
+            except ImportError:
+                pass
+            return False
+
         # ── DIRECT GOOGLE-GENAI ROUTING FOR GEMINI_GROUNDING ──
         if provider == "gemini_grounding" and not is_mocked:
-            api_key = merged_args.get("api_key")
-            
-            # Fallback to env key if not found in db
-            if not api_key:
-                import os
-                api_key = os.getenv("GEMINI_API_KEY")
+            last_err = None
+            for idx, current_key in enumerate(api_keys):
+                actual_key = current_key
+                if not actual_key:
+                    import os
+                    actual_key = os.getenv("GEMINI_API_KEY")
 
-            if not api_key:
-                raise ValueError("Gemini API key is not configured for search grounding.")
+                if not actual_key:
+                    last_err = ValueError("Gemini API key is not configured for search grounding.")
+                    if idx < len(api_keys) - 1:
+                        continue
+                    else:
+                        raise last_err
 
-            enable_search = True
-            from app.models.database import SessionLocal
-            from app.models.schema import SystemConfig
-            db_s = SessionLocal()
-            try:
-                cfg = db_s.query(SystemConfig).filter(SystemConfig.key == "enable_search_grounding").first()
-                if cfg and cfg.value:
-                    enable_search = (cfg.value.strip().lower() == "true")
-            except Exception:
-                pass
-            finally:
-                db_s.close()
+                enable_search = True
+                from app.models.database import SessionLocal
+                from app.models.schema import SystemConfig
+                db_s = SessionLocal()
+                try:
+                    cfg = db_s.query(SystemConfig).filter(SystemConfig.key == "enable_search_grounding").first()
+                    if cfg and cfg.value:
+                        enable_search = (cfg.value.strip().lower() == "true")
+                except Exception:
+                    pass
+                finally:
+                    db_s.close()
 
-            temp = kwargs.get("temperature", 0.1)
-            max_tokens = kwargs.get("max_tokens", 2048)
+                temp = kwargs.get("temperature", 0.1)
+                max_tokens = kwargs.get("max_tokens", 2048)
 
-            with measure_llm_call("gemini_grounding", model_name, messages[0]["content"] if messages else "") as span:
-                span.set_attribute("llm.google_genai_used", True)
-                span.set_attribute("llm.search_grounding_enabled", enable_search)
-                
-                # Execute Gemini content generation in a separate thread to prevent event loop blocking
-                content = await asyncio.to_thread(
-                    run_gemini_grounding_sync,
-                    api_key=api_key,
-                    model_name=model_name,
-                    messages=messages,
-                    temperature=temp,
-                    max_tokens=max_tokens,
-                    enable_search=enable_search
-                )
-                
-                return GeminiResponseWrapper(content)
+                try:
+                    with measure_llm_call("gemini_grounding", model_name, messages[0]["content"] if messages else "") as span:
+                        span.set_attribute("llm.google_genai_used", True)
+                        span.set_attribute("llm.search_grounding_enabled", enable_search)
+                        span.set_attribute("llm.key_index", idx)
+                        
+                        # Execute Gemini content generation in a separate thread to prevent event loop blocking
+                        content = await asyncio.to_thread(
+                            run_gemini_grounding_sync,
+                            api_key=actual_key,
+                            model_name=model_name,
+                            messages=messages,
+                            temperature=temp,
+                            max_tokens=max_tokens,
+                            enable_search=enable_search
+                        )
+                        
+                        return GeminiResponseWrapper(content)
+                except Exception as e:
+                    last_err = e
+                    if _is_rate_limit_exception(e) and idx < len(api_keys) - 1:
+                        import logging
+                        logger = logging.getLogger("app.services.provider_service")
+                        logger.warning(f"Rate limit hit on key index {idx} for gemini_grounding. Rotating to next key. Error: {e}")
+                        await asyncio.sleep(0.5)
+                        continue
+                    else:
+                        raise e
+            if last_err:
+                raise last_err
 
         # ── STANDARD LITELLM COMPLETION WITH OTEL WRAPPER ──
-        with measure_llm_call(provider, model_name, messages[0]["content"] if messages else "") as span:
-            response = await litellm.acompletion(
-                messages=messages,
-                **merged_args
-            )
-            
-            if hasattr(response, "usage") and response.usage:
-                prompt_tokens = getattr(response.usage, "prompt_tokens", 0)
-                completion_tokens = getattr(response.usage, "completion_tokens", 0)
-                total_tokens = getattr(response.usage, "total_tokens", 0)
-                
-                # Ensure we only set type-compliant values in OTel (prevents mock conflicts)
-                if isinstance(prompt_tokens, (int, float)):
-                    span.set_attribute("llm.tokens.prompt", prompt_tokens)
-                if isinstance(completion_tokens, (int, float)):
-                    span.set_attribute("llm.tokens.completion", completion_tokens)
-                if isinstance(total_tokens, (int, float)):
-                    span.set_attribute("llm.tokens.total", total_tokens)
-                
-            return response
+        last_err = None
+        for idx, current_key in enumerate(api_keys):
+            current_args = merged_args.copy()
+            if current_key:
+                current_args["api_key"] = current_key
+            else:
+                current_args.pop("api_key", None)
+
+            try:
+                with measure_llm_call(provider, model_name, messages[0]["content"] if messages else "") as span:
+                    span.set_attribute("llm.key_index", idx)
+                    response = await litellm.acompletion(
+                        messages=messages,
+                        **current_args
+                    )
+                    
+                    if hasattr(response, "usage") and response.usage:
+                        prompt_tokens = getattr(response.usage, "prompt_tokens", 0)
+                        completion_tokens = getattr(response.usage, "completion_tokens", 0)
+                        total_tokens = getattr(response.usage, "total_tokens", 0)
+                        
+                        # Ensure we only set type-compliant values in OTel (prevents mock conflicts)
+                        if isinstance(prompt_tokens, (int, float)):
+                            span.set_attribute("llm.tokens.prompt", prompt_tokens)
+                        if isinstance(completion_tokens, (int, float)):
+                            span.set_attribute("llm.tokens.completion", completion_tokens)
+                        if isinstance(total_tokens, (int, float)):
+                            span.set_attribute("llm.tokens.total", total_tokens)
+                        
+                    return response
+            except Exception as e:
+                last_err = e
+                if _is_rate_limit_exception(e) and idx < len(api_keys) - 1:
+                    import logging
+                    logger = logging.getLogger("app.services.provider_service")
+                    logger.warning(f"Rate limit hit on key index {idx} for {provider}. Rotating to next key. Error: {e}")
+                    await asyncio.sleep(0.5)
+                    continue
+                else:
+                    raise e
+        if last_err:
+            raise last_err
 
 
 class GeminiResponseWrapper:
