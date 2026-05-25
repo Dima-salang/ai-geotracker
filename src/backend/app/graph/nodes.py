@@ -912,6 +912,8 @@ async def _query_single_prompt(
             )
 
     provider_name_log = provider_name
+    import time
+    start_time = time.time()
     try:
         response = await ProviderService.acompletion(
             provider=provider_name,
@@ -924,18 +926,31 @@ async def _query_single_prompt(
             num_retries=0,       # Fail fast — no retry backoff blocking the event loop
             call_args=call_args,
         )
+        end_time = time.time()
+        latency_ms = int((end_time - start_time) * 1000)
+        
+        tokens_used = 0
+        if hasattr(response, "usage") and response.usage:
+            tokens_used = getattr(response.usage, "total_tokens", 0)
+        elif isinstance(response, dict) and "usage" in response:
+            tokens_used = response["usage"].get("total_tokens", 0)
+
         content = response.choices[0].message.content or ""
         logger.info(
-            "Provider '%s' | Prompt [%d/%d] → Raw response obtained.",
-            provider_name_log, prompt_index + 1, total_prompts
+            "Provider '%s' | Prompt [%d/%d] → Raw response obtained. Latency: %d ms, Tokens: %d",
+            provider_name_log, prompt_index + 1, total_prompts, latency_ms, tokens_used
         )
         return {
             "prompt": prompt,
             "prompt_index": prompt_index,
             "raw_response": content,
+            "latency_ms": latency_ms,
+            "tokens_used": tokens_used,
             "error": None
         }
     except Exception as e:
+        end_time = time.time()
+        latency_ms = int((end_time - start_time) * 1000)
         logger.warning(
             "Provider '%s' | Prompt [%d/%d] '%s' → FAILED: %s",
             provider_name_log, prompt_index + 1, total_prompts, prompt, str(e)
@@ -944,6 +959,8 @@ async def _query_single_prompt(
             "prompt": prompt,
             "prompt_index": prompt_index,
             "raw_response": "",
+            "latency_ms": latency_ms,
+            "tokens_used": 0,
             "error": str(e)
         }
 
@@ -1117,6 +1134,8 @@ async def query_single_provider(
             reason=best["reason"],
             error=errors[0] if all_failed and errors else None,
             prompt_results=prompt_results,
+            latency_ms=None,
+            tokens_used=None,
         )
 
     except Exception as e:
@@ -1131,6 +1150,8 @@ async def query_single_provider(
             mentioned=False,
             error=str(e),
             reason=f"Provider query failed: {e}",
+            latency_ms=None,
+            tokens_used=None,
         )
 
 

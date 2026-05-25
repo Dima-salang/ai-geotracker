@@ -1,11 +1,14 @@
 import time
 import logging
+import contextvars
 from contextlib import contextmanager
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor, ConsoleSpanExporter
 
 logger = logging.getLogger("app.services.otel")
+
+current_scan_id = contextvars.ContextVar("current_scan_id", default=None)
 
 # Initialize global tracer provider and simple console exporter
 try:
@@ -46,3 +49,42 @@ def measure_llm_call(provider_name: str, model_name: str, prompt: str = ""):
                 "OTel Span Resolved: %s | Model: %s | Latency: %dms",
                 span_name, model_name, int(latency_ms)
             )
+
+            # --- DIRECT DATABASE TELEMETRY LOGGING ---
+            try:
+                # Read attributes from span
+                attrs = getattr(span, "attributes", {})
+                tokens_used = attrs.get("llm.tokens.total", 0)
+                llm_status = attrs.get("llm.status", "error")
+                
+                # Get the active scan ID from context var
+                scan_id = current_scan_id.get()
+                if scan_id:
+                    from app.models.database import SessionLocal
+                    from app.models.schema import ScanResult
+                    
+                    db = SessionLocal()
+                    try:
+                        # Write the raw telemetry directly to the DB!
+                        db.add(ScanResult(
+                            scan_id=scan_id,
+                            provider=provider_name,
+                            model=model_name,
+                            display_name=provider_name.capitalize(),
+                            status="complete" if llm_status == "success" else "failed",
+                            score=0,
+                            mentioned=False,
+                            actionable=False,
+                            domain_match=False,
+                            latency_ms=int(latency_ms),
+                            tokens_used=tokens_used,
+                            error=str(span.status.description) if (hasattr(span, "status") and span.status and getattr(span.status, "description", None)) else None,
+                        ))
+                        db.commit()
+                    except Exception as db_err:
+                        logger.warning("Failed to save OTel telemetry to DB: %s", db_err)
+                    finally:
+                        db.close()
+            except Exception as tel_err:
+                logger.warning("Failed to process OTel telemetry: %s", tel_err)
+

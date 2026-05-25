@@ -817,6 +817,18 @@ def get_observability_stats(db: Session = Depends(get_db)):
             for r in scans_by_date
         ]
     }
+
+
+@router.get("/public-stats")
+def get_public_stats(db: Session = Depends(get_db)):
+    """Retrieve public system stats (unauthenticated) for the landing page."""
+    from app.models.schema import Scan
+    total_scans = db.query(Scan).count()
+    return {
+        "total_scans": total_scans
+    }
+
+
 @router.post("/leads/{lead_id}/assign", response_model=LeadRead)
 def assign_lead_to_agent(lead_id: uuid.UUID, agent_id: uuid.UUID, db: Session = Depends(get_db)):
     """Assign a lead to a specific agent."""

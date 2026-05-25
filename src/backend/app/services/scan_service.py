@@ -81,6 +81,10 @@ class ScanService:
             db.commit()
             db.refresh(scan)
 
+            # Set current scan context for OTel direct database telemetry logging
+            from app.services.otel import current_scan_id
+            current_scan_id.set(scan.id)
+
             yield f"event: progress\ndata: {json.dumps({'stage': 'initiated', 'scan_id': str(scan.id), 'business_id': str(biz.id)})}\n\n"
 
             initial = ScanState(request=req)
@@ -214,6 +218,8 @@ class ScanService:
                     actionable=pr.actionable,
                     domain_match=pr.domain_match,
                     reason=pr.reason,
+                    latency_ms=None,      # Set to None to avoid double-counting; raw OTel spans log latency directly
+                    tokens_used=None,     # Set to None to avoid double-counting; raw OTel spans log tokens directly
                     error=pr.error,
                     raw_response=json.dumps(pr.prompt_results) if pr.prompt_results else None,
                 ))

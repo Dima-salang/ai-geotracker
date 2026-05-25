@@ -38,6 +38,8 @@ class ProviderResult(BaseModel):
     reason: str = ""
     error: Optional[str] = None
     prompt_results: list[dict] = []
+    latency_ms: Optional[int] = None
+    tokens_used: Optional[int] = None
 
 
 
