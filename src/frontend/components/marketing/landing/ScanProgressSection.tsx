@@ -1,17 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import type { ResearchFact } from "@/hooks/useVisibilityScan";
+import { LoadingBlob } from "@/components/marketing/landing/LoadingBlob";
 import { btnPrimary, btnSecondary, eyebrow, headingH2, marketingContainer } from "@/lib/marketing/design-tokens";
-
-const FLOATING_POSITIONS = [
-  { top: "-55%", left: "-85%" },
-  { top: "-15%", right: "-90%" },
-  { bottom: "-65%", left: "-55%" },
-  { top: "-80%", right: "-55%" },
-  { bottom: "45%", left: "-90%" },
-  { bottom: "-50%", right: "-70%" },
-] as const;
 
 type ScanProgressSectionProps = {
   visible: boolean;
@@ -19,7 +10,6 @@ type ScanProgressSectionProps = {
   domain: string;
   progressMessage: string;
   isRateLimited: boolean;
-  researchedFacts: ResearchFact[];
   onRateLimitDismiss: () => void;
 };
 
@@ -29,7 +19,6 @@ export function ScanProgressSection({
   domain,
   progressMessage,
   isRateLimited,
-  researchedFacts,
   onRateLimitDismiss,
 }: ScanProgressSectionProps) {
   if (!visible) return null;
@@ -40,7 +29,7 @@ export function ScanProgressSection({
       className={`border-b border-border bg-surface-container-low transition-all duration-700 ${
         hidden
           ? "max-h-0 py-0 opacity-0 overflow-hidden pointer-events-none border-b-0"
-          : "py-16 md:py-24 opacity-100 px-6 md:px-10"
+          : "py-16 md:py-28 opacity-100 px-6 md:px-10"
       }`}
       aria-live="polite"
       aria-busy={!isRateLimited}
@@ -66,35 +55,22 @@ export function ScanProgressSection({
           </>
         ) : (
           <>
-            <div className="relative w-48 h-48 sm:w-56 sm:h-56 md:w-72 md:h-72 flex items-center justify-center mb-8 md:mb-10">
-              <div className="absolute inset-0 ethereal-blob" aria-hidden />
-              {researchedFacts.map((fact, idx) => {
-                const pos = FLOATING_POSITIONS[idx % FLOATING_POSITIONS.length];
-                return (
-                  <div
-                    key={fact.id}
-                    className={`floating-pill floating-fact-enter-${(idx % 6) + 1} max-w-[140px] sm:max-w-none`}
-                    style={pos}
-                  >
-                    <span className="font-mono text-[9px] text-primary uppercase tracking-widest block mb-0.5 font-bold">
-                      {fact.label}
-                    </span>
-                    <span className="font-sans text-xs font-bold text-foreground leading-tight">
-                      {fact.value}
-                    </span>
-                  </div>
-                );
-              })}
+            <div className="mb-10 md:mb-12">
+              <LoadingBlob />
             </div>
 
-            <p className={eyebrow}>Checking your visibility</p>
-            <h2 className={`${headingH2} mt-3 break-words`}>Analyzing {domain}</h2>
-            <p className="font-mono text-[10px] uppercase text-text-muted mt-3 max-w-md tracking-wider">
+            <p className={`${eyebrow} animate-pulse`}>Checking your visibility</p>
+            <h2 className={`${headingH2} mt-3 break-words px-2`}>Analyzing {domain}</h2>
+            <p className="font-mono text-[10px] uppercase text-text-muted mt-3 max-w-md tracking-wider min-h-[2.5em]">
               {progressMessage}
             </p>
 
-            <div className="w-full max-w-xs h-1 bg-border mt-8 overflow-hidden" role="progressbar" aria-valuetext="In progress">
-              <div className="h-full w-2/5 bg-primary animate-pulse" />
+            <div
+              className="loading-progress-track w-full max-w-sm mt-10"
+              role="progressbar"
+              aria-valuetext={progressMessage}
+            >
+              <div className="loading-progress-bar" />
             </div>
           </>
         )}

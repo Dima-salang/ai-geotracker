@@ -63,11 +63,7 @@ export function HeroSection({
       >
         {/* Left: copy + form — shifted left on desktop like original */}
         <div className="flex flex-col justify-center order-1 text-center md:text-left md:max-w-[440px] lg:max-w-[480px] w-full md:-translate-x-6 lg:-translate-x-12 xl:-translate-x-16 mx-auto md:mx-0">
-          <span
-            className={`${eyebrow} inline-block mb-4 px-2 py-0.5 border border-primary/20 bg-primary/10`}
-          >
-            Free AI visibility check
-          </span>
+
 
           <h1 className={`${headingH1} mb-6`}>
             Is AI sending customers to you—or your competitors?
