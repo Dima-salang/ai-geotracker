@@ -180,10 +180,19 @@ body {
 /* ── Ethereal Blob Animation ── */
 .ethereal-blob {
   background: radial-gradient(circle, var(--primary) 0%, #00ccff 50%, #8000ff 100%);
-  filter: blur(40px);
+  filter: blur(45px);
   opacity: 0.65;
   mix-blend-mode: multiply;
-  animation: blob-spin 10s linear infinite, blob-morph 8s ease-in-out infinite alternate;
+  animation: blob-spin 6s linear infinite, blob-morph 4s ease-in-out infinite alternate;
+  transition: transform 0.8s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.8s ease, filter 0.8s ease;
+  pointer-events: auto;
+}
+
+.ethereal-blob:hover {
+  transform: scale(1.22);
+  opacity: 0.85;
+  filter: blur(30px);
+  animation-duration: 3s, 2s; /* Hyper-accelerate on hover! */
 }
 
 @keyframes blob-spin {
@@ -207,11 +216,13 @@ body {
   z-index: 20;
   box-shadow: none;
   pointer-events: auto;
-  transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), filter 0.4s ease;
 }
 
 .floating-pill:hover {
-  transform: scale(1.08) !important;
+  transform: scale(1.18) translateY(-4px) !important;
+  z-index: 40;
+  cursor: grab;
 }
 
 .floating-fact-enter-1 {

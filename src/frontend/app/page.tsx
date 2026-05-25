@@ -11,7 +11,7 @@ import { supabase } from "../utils/supabase";
 const NAV_LINKS = [
   { label: "AUDIT", href: "/", active: true },
   { label: "SERVICES", href: "#" },
-  { label: "PRICING", href: "#" },
+  { label: "PRICING", href: "/pricing" },
   { label: "FAQS", href: "#" },
   { label: "ADMIN", href: "/admin" },
 ] as const;
@@ -66,18 +66,19 @@ const BENTO_CARDS = {
 
 /* ── Floating positions for real-time fact popups orbiting the central blob ── */
 const FLOATING_POSITIONS = [
-  { top: "-25%", left: "-45%", right: undefined, bottom: undefined },
-  { top: "10%", right: "-55%", left: undefined, bottom: undefined },
-  { bottom: "-25%", left: "-30%", right: undefined, top: undefined },
-  { top: "-35%", right: "-25%", left: undefined, bottom: undefined },
-  { bottom: "30%", left: "-55%", right: undefined, top: undefined },
-  { bottom: "-25%", right: "-35%", left: undefined, top: undefined },
-  { top: "50%", left: "-60%", right: undefined, bottom: undefined },
-  { bottom: "45%", right: "-55%", left: undefined, top: undefined },
+  { top: "-60%", left: "-90%", right: undefined, bottom: undefined },
+  { top: "-20%", right: "-95%", left: undefined, bottom: undefined },
+  { bottom: "-70%", left: "-60%", right: undefined, top: undefined },
+  { top: "-85%", right: "-60%", left: undefined, bottom: undefined },
+  { bottom: "50%", left: "-95%", right: undefined, top: undefined },
+  { bottom: "-55%", right: "-75%", left: undefined, top: undefined },
+  { top: "85%", left: "-100%", right: undefined, bottom: undefined },
+  { bottom: "95%", right: "-85%", left: undefined, top: undefined },
 ] as const;
 
 export default function LandingPage() {
   const [domain, setDomain] = useState("");
+  const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [inputFocused, setInputFocused] = useState(false);
   const [loading, setLoading] = useState(false);
   const [progressStage, setProgressStage] = useState("");
@@ -107,6 +108,7 @@ export default function LandingPage() {
   const [liveDetails, setLiveDetails] = useState<ResearchedDetails | null>(null);
   const [userSession, setUserSession] = useState<{ id: string; email: string; tier: string } | null>(null);
   const [authToken, setAuthToken] = useState<string | null>(null);
+  const [showSignInModal, setShowSignInModal] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -649,7 +651,7 @@ export default function LandingPage() {
                           industry: fullScan.business_industry,
                           primary_city: fullScan.business_city,
                           primary_state: fullScan.business_state,
-                          country: "US",
+                          country: fullScan.business_country || "",
                           service_focuses: fullScan.business_service_focuses || [],
                           is_virtual: fullScan.is_virtual ?? data.is_virtual ?? false,
                           latitude: fullScan.business_latitude,
@@ -704,10 +706,12 @@ export default function LandingPage() {
                       const providerName = typeof p === "string" ? p : p.provider;
                       const modelName = typeof p === "string" ? null : p.model;
                       const displayName = typeof p === "string" ? null : p.display_name;
+                      const configId = typeof p === "string" ? null : (p.id || p.config_id || null);
                       return {
                         provider: providerName,
                         model: modelName,
                         display_name: displayName,
+                        config_id: configId,
                         status: "loading",
                         score: 0,
                         mentioned: false,
@@ -736,9 +740,38 @@ export default function LandingPage() {
                 
                 // Live incremental provider results update
                 setStreamingProviders((prev) => {
-                  const exists = prev.some((p) => p.provider === data.provider && p.model === data.model);
-                  if (exists) {
-                    return prev.map((p) => (p.provider === data.provider && p.model === data.model ? (data as ProviderResult) : p));
+                  let matchIndex = -1;
+
+                  if (data.config_id) {
+                    matchIndex = prev.findIndex(
+                      (p) => p.config_id === data.config_id
+                    );
+                  }
+
+                  if (matchIndex === -1) {
+                    const cleanModel = (m: string | null | undefined) => {
+                      if (!m) return "";
+                      return m.toLowerCase().replace(/^(openrouter|gemini|groq|deepseek|mistral|perplexity|qwen)\//, "").trim();
+                    };
+
+                    matchIndex = prev.findIndex(
+                      (p) =>
+                        p.provider.toLowerCase() === data.provider.toLowerCase() &&
+                        cleanModel(p.model) === cleanModel(data.model)
+                    );
+                  }
+
+                  if (matchIndex === -1) {
+                    matchIndex = prev.findIndex(
+                      (p) =>
+                        p.provider.toLowerCase() === data.provider.toLowerCase()
+                    );
+                  }
+
+                  if (matchIndex !== -1) {
+                    const next = [...prev];
+                    next[matchIndex] = { ...next[matchIndex], ...(data as ProviderResult) };
+                    return next;
                   } else {
                     return [...prev, data as ProviderResult];
                   }
@@ -763,7 +796,7 @@ export default function LandingPage() {
                         industry: fullScan.business_industry,
                         primary_city: fullScan.business_city,
                         primary_state: fullScan.business_state,
-                        country: "US", // Default placeholder
+                        country: fullScan.business_country || "",
                         service_focuses: fullScan.business_service_focuses || [],
                         is_virtual: fullScan.is_virtual ?? isVirtualDetected ?? false,
                         latitude: fullScan.business_latitude,
@@ -823,6 +856,14 @@ export default function LandingPage() {
                 {link.label}
               </a>
             ))}
+            {userSession && (
+              <Link
+                href="/dashboard"
+                className="font-mono text-xs tracking-tighter uppercase font-bold text-primary hover:text-primary-container"
+              >
+                DASHBOARD
+              </Link>
+            )}
           </div>
         </div>
         <button
@@ -832,16 +873,7 @@ export default function LandingPage() {
               await supabase.auth.signOut();
               alert("Logged out successfully.");
             } else {
-              const redirectTo = `${window.location.origin}/auth/callback`;
-              const { error } = await supabase.auth.signInWithOAuth({
-                provider: "google",
-                options: {
-                  redirectTo,
-                },
-              });
-              if (error) {
-                alert(`Sign in failed: ${error.message}`);
-              }
+              setShowSignInModal(true);
             }
           }}
           className="font-mono text-xs tracking-tighter bg-primary text-white px-6 py-2 hover:bg-primary-container transition-all uppercase"
@@ -1121,7 +1153,7 @@ export default function LandingPage() {
               : "opacity-0 translate-y-12 scale-95 max-h-0 py-0 overflow-hidden pointer-events-none border-b-0"
           }`}
         >
-          <div className="max-w-7xl mx-auto mb-8 flex flex-col sm:flex-row justify-between items-start sm:items-end border-b border-foreground/10 pb-4 gap-4">
+          <div className="max-w-[95vw] xl:max-w-[92vw] mx-auto mb-8 flex flex-col sm:flex-row justify-between items-start sm:items-end border-b border-foreground/10 pb-4 gap-4">
             <div>
               <span className="font-mono text-xs text-primary mb-2 uppercase tracking-[0.2em] block">
                 {loading ? "◆ AUDIT CURRENTLY RUNNING" : "REAL-TIME RESULTS DASHBOARD"}
@@ -1257,6 +1289,206 @@ export default function LandingPage() {
             </div>
           </div>
         </section>
+
+        {/* ═══════════════════════ THE PIPELINE PROTOCOL (HOW IT WORKS) ═══════════════════════ */}
+        <section id="protocol-section" className="py-24 px-6 md:px-10 border-b border-border bg-[#FAF9F6] reveal-on-scroll">
+          <div className="max-w-7xl mx-auto">
+            <h2 className="font-mono text-xs text-primary mb-2 uppercase tracking-[0.2em]">
+              Orchestration Flow
+            </h2>
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-end border-b border-foreground/10 pb-4 mb-16 gap-4">
+              <p className="font-display text-[2rem] font-bold max-w-xl leading-tight tracking-tight">
+                The Pipeline Protocol: From Domain to Deficit Blueprint.
+              </p>
+              <span className="font-mono text-[10px] text-outline mb-2">
+                SYS_PIPELINE: ACTIVE
+              </span>
+            </div>
+
+            {/* Steps Timeline bento-grid */}
+            <div className="grid grid-cols-1 md:grid-cols-4 border border-border" style={{ background: "rgba(0,0,0,0.06)" }}>
+              {[
+                {
+                  step: "01",
+                  title: "Grounding Index",
+                  description: "Initial business classification mapping. LangGraph triggers search grounding (Gemini Grounding) to resolve physical location coordinates, service footprint vectors, and neighborhood bounds."
+                },
+                {
+                  step: "02",
+                  title: "Proximity Scenarios",
+                  description: "Dynamically compiles distinct customer intent prompts (e.g. \"Best [Your Service] in [Your Neighborhood]\") based on geographic radial footprint calculations."
+                },
+                {
+                  step: "03",
+                  title: "Parallel Nodes",
+                  description: "Dispatches scenarios simultaneously across parallel multi-LLM engine endpoints. Streams raw response tokens from Gemini, ChatGPT, Claude, and LLaMA nodes in real-time."
+                },
+                {
+                  step: "04",
+                  title: "Scorecard Synthesis",
+                  description: "Aggregates citation records and calculates final Discovery Scorecard. Evaluates brand Share of Voice (SOV) and outputs highly technical optimization schemas."
+                }
+              ].map((item, idx) => (
+                <div key={idx} className="bg-background p-8 md:p-10 flex flex-col border-b md:border-b-0 md:border-r border-border last:border-r-0 hover:bg-primary/[0.02] transition-all">
+                  <span className="font-mono text-sm text-primary font-bold mb-6 block">
+                    ◆ STEP_{item.step}
+                  </span>
+                  <h3 className="font-display text-xl font-bold mb-4 tracking-tight uppercase">
+                    {item.title}
+                  </h3>
+                  <p className="font-sans text-xs text-text-muted leading-relaxed">
+                    {item.description}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* ═══════════════════════ PRICING MATRIX ═══════════════════════ */}
+        <section id="pricing-section" className="py-24 px-6 md:px-10 border-b border-border bg-surface-container-low reveal-on-scroll">
+          <div className="max-w-7xl mx-auto">
+            <h2 className="font-mono text-xs text-primary mb-2 uppercase tracking-[0.2em]">
+              Subscription Registry
+            </h2>
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-end border-b border-foreground/10 pb-4 mb-16 gap-4">
+              <p className="font-display text-[2rem] font-bold max-w-xl leading-tight tracking-tight">
+                Operational licenses tailored to secure your brand share.
+              </p>
+              <span className="font-mono text-[10px] text-outline mb-2">
+                VER_SUBSCRIPTION: ACTIVE
+              </span>
+            </div>
+
+            {/* Pricing Cards Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+              {/* Card 1: Guest scan */}
+              <div className="bg-background border border-border p-8 md:p-10 flex flex-col justify-between shadow-[4px_4px_0px_0px_rgba(0,0,0,0.05)]">
+                <div>
+                  <span className="font-mono text-[9px] text-text-muted uppercase tracking-widest block mb-4">◆ Guest Tier</span>
+                  <h3 className="font-display text-2xl font-black uppercase mb-2">Quick Scan</h3>
+                  <div className="font-display text-3xl font-black mb-6">$0<span className="text-xs text-text-muted font-normal font-mono"> / forever</span></div>
+                  <ul className="space-y-3 font-sans text-xs text-text-muted mb-8 border-t border-border pt-6">
+                    <li className="flex items-center gap-2">✓ <span className="font-mono font-bold">[3 SCANS / DOMAIN LIMIT]</span></li>
+                    <li>✓ Basic multi-LLM citation scorecards</li>
+                    <li>✓ Surface visibility deficit checklist</li>
+                  </ul>
+                </div>
+                <button 
+                  onClick={() => document.getElementById("top-nav")?.scrollIntoView({ behavior: "smooth" })}
+                  className="w-full font-mono text-xs py-3.5 border border-foreground bg-white text-black hover:bg-black/5 transition-all uppercase font-bold tracking-widest"
+                >
+                  Run Guest Scan
+                </button>
+              </div>
+
+              {/* Card 2: PREMIUM Tier (Most Popular) */}
+              <div className="bg-background border-2 border-primary p-8 md:p-10 flex flex-col justify-between shadow-[8px_8px_0px_0px_rgba(0,85,255,0.15)] relative">
+                <div className="absolute -top-3.5 left-6 bg-primary text-white font-mono text-[9px] px-3 py-1 uppercase tracking-widest font-black">
+                  ✦ MOST POPULAR
+                </div>
+                <div>
+                  <span className="font-mono text-[9px] text-primary uppercase tracking-widest block mb-4">◆ Professional SOV</span>
+                  <h3 className="font-display text-2xl font-black uppercase mb-2">Premium</h3>
+                  <div className="font-display text-3xl font-black mb-6">$49<span className="text-xs text-text-muted font-normal font-mono"> / month</span></div>
+                  <ul className="space-y-3 font-sans text-xs text-foreground mb-8 border-t border-border pt-6">
+                    <li className="flex items-center gap-2">✓ <span className="font-mono font-bold text-primary">[UNLIMITED DETAILED AUDITS]</span></li>
+                    <li>✓ Dynamic Answer Engine Optimization (AEO) schemas</li>
+                    <li>✓ In-depth prompt score breakdowns</li>
+                    <li>✓ Lead generation tracker & in-app alerts</li>
+                  </ul>
+                </div>
+                <button 
+                  onClick={() => alert("Redirecting to billing setup... Please register an account or access your Settings inside the Dashboard to activate Premium.")}
+                  className="w-full font-mono text-xs py-3.5 bg-primary text-white hover:bg-primary-hover transition-all uppercase font-bold tracking-widest border border-primary shadow-[2px_2px_0px_0px_rgba(0,0,0,0.15)]"
+                >
+                  Activate Premium
+                </button>
+              </div>
+
+              {/* Card 3: ULTRA PREMIUM Tier */}
+              <div className="bg-background border border-border p-8 md:p-10 flex flex-col justify-between shadow-[4px_4px_0px_0px_rgba(0,0,0,0.05)]">
+                <div>
+                  <span className="font-mono text-[9px] text-text-muted uppercase tracking-widest block mb-4">◆ Franchise Network</span>
+                  <h3 className="font-display text-2xl font-black uppercase mb-2">Ultra Premium</h3>
+                  <div className="font-display text-3xl font-black mb-6">$149<span className="text-xs text-text-muted font-normal font-mono"> / month</span></div>
+                  <ul className="space-y-3 font-sans text-xs text-text-muted mb-8 border-t border-border pt-6">
+                    <li>✓ Everything in Premium package included</li>
+                    <li>✓ Shared multi-user team lead directories</li>
+                    <li>✓ Encrypted rotating API credential vaults</li>
+                    <li>✓ Radial geographic neighborhood index expansion</li>
+                    <li>✓ Priority crawling and audit latency queue</li>
+                  </ul>
+                </div>
+                <button 
+                  onClick={() => alert("Redirecting to billing setup... Please register an account or access your Settings inside the Dashboard to activate Ultra Premium.")}
+                  className="w-full font-mono text-xs py-3.5 border border-foreground bg-white text-black hover:bg-black/5 transition-all uppercase font-bold tracking-widest"
+                >
+                  Upgrade to Ultra
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ═══════════════════════ TECHNICAL FAQs ═══════════════════════ */}
+        <section id="faq-section" className="py-24 px-6 md:px-10 bg-[#FAF9F6] reveal-on-scroll">
+          <div className="max-w-4xl mx-auto">
+            <h2 className="font-mono text-xs text-primary mb-2 uppercase tracking-[0.2em] text-center">
+              Documentation Reference
+            </h2>
+            <h2 className="font-display text-[2.2rem] font-bold text-center uppercase tracking-tight mb-16">
+              Frequently Asked Questions
+            </h2>
+
+            {/* Accordion List */}
+            <div className="border border-foreground/10 division-y division-foreground/10 bg-background shadow-sm">
+              {[
+                {
+                  q: "What is AEO and why does standard SEO no longer suffice?",
+                  a: "Answer Engine Optimization (AEO) is the methodology of structuring business schema and brand content to be crawled, parsed, and cited by Generative AI Search engines (like ChatGPT Search, Perplexity, Gemini, and Claude). Standard SEO targets search engine ranking pages, while AEO ensures your business is synthesized as the direct recommendation within the AI's natural language responses."
+                },
+                {
+                  q: "How does GeoTracker calculate the overall Discovery Score?",
+                  a: "The score is compiled across a weighted aggregate index evaluating: (1) Mention Rate: whether your domain is cited across active parallel prompts; (2) Sentiment: the semantic loading vector representing your brand; (3) Actionability: whether direct booking, schema URLs, or telephone contacts are extracted cleanly; (4) Domain Match: presence of verified index references."
+                },
+                {
+                  q: "What is the function of the Search Grounding Engine?",
+                  a: "The Grounding Engine (built on Gemini Grounding node frameworks) performs initial target sanitization. It pulls organic search indices of your business to extract physical storefront bounds, service categorizations, and neighborhood geographic variables, injecting high-relevance prompt contexts for parallel multi-LLM scans."
+                },
+                {
+                  q: "Can I manage rotating API keys to bypass rate limits?",
+                  a: "Yes. The Operator Settings Dashboard supports storing encrypted access keys for each AI provider as comma-separated lists. The backend service rotates keys dynamically and retries operations when rate limits (429 HTTP status) are detected, securing continuous auditing pipelines."
+                }
+              ].map((faq, idx) => {
+                const isOpen = openFaq === idx;
+                return (
+                  <div key={idx} className="border-b border-foreground/10 last:border-b-0">
+                    <button
+                      onClick={() => setOpenFaq(isOpen ? null : idx)}
+                      className="w-full flex justify-between items-center p-6 text-left font-display text-base font-bold uppercase transition-all select-none hover:bg-primary/[0.01] cursor-pointer"
+                    >
+                      <span className="flex items-center gap-3">
+                        <span className="font-mono text-xs text-primary">0{idx + 1}.</span>
+                        {faq.q}
+                      </span>
+                      <span className="font-mono text-sm font-black text-primary transition-transform duration-300">
+                        {isOpen ? "[ ✗ ]" : "[ ＋ ]"}
+                      </span>
+                    </button>
+                    <div className={`transition-all duration-300 ease-in-out overflow-hidden ${
+                      isOpen ? "max-h-[300px] border-t border-foreground/10 p-6 bg-surface-container-low/40" : "max-h-0"
+                    }`}>
+                      <p className="font-sans text-xs text-text-muted leading-relaxed select-text">
+                        {faq.a}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </section>
       </main>
 
       {/* ═══════════════════════ FOOTER ═══════════════════════ */}
@@ -1285,6 +1517,80 @@ export default function LandingPage() {
           ©2024 GEOTRACKER_CORE [VER_8.1.0]
         </div>
       </footer>
+
+      {/* ── Client Sign In Modal ── */}
+      {showSignInModal && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm transition-all duration-300 animate-in fade-in"
+          onClick={() => setShowSignInModal(false)}
+        >
+          <div
+            className="w-full max-w-md p-8 bg-background border border-border shadow-2xl relative flex flex-col items-center justify-center animate-in zoom-in-95 duration-200 rounded-none"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Monospace elegant close button */}
+            <button
+              onClick={() => setShowSignInModal(false)}
+              className="absolute top-4 right-4 font-mono text-xs tracking-widest text-text-muted hover:text-foreground hover:scale-105 transition-all"
+            >
+              [ CLOSE ✗ ]
+            </button>
+
+            {/* Premium Icon & Title */}
+            <div className="mb-6 flex flex-col items-center">
+              <div className="w-12 h-12 rounded-none border border-primary/40 flex items-center justify-center bg-background/50 mb-3">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-primary">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                </svg>
+              </div>
+              <h3 className="font-display text-2xl font-bold tracking-tight text-foreground text-center">
+                Client Access Portal
+              </h3>
+            </div>
+
+            {/* Description list */}
+            <div className="w-full space-y-4 mb-8 font-sans text-xs text-text-muted border-t border-b border-border/60 py-5">
+              <div className="flex gap-3">
+                <span className="text-primary font-mono select-none">✓</span>
+                <p>Unlock unlimited instant search engine deep-scans without abuse limits.</p>
+              </div>
+              <div className="flex gap-3">
+                <span className="text-primary font-mono select-none">✓</span>
+                <p>Build permanent auditing profiles to track relative Share of Voice (SOV) over time.</p>
+              </div>
+              <div className="flex gap-3">
+                <span className="text-primary font-mono select-none">✓</span>
+                <p>Access full technical optimization blueprints and actionable prompt-level scorecards.</p>
+              </div>
+            </div>
+
+            {/* Large Google Sign In button */}
+            <button
+              onClick={async () => {
+                const redirectTo = `${window.location.origin}/auth/callback`;
+                const { error } = await supabase.auth.signInWithOAuth({
+                  provider: "google",
+                  options: {
+                    redirectTo,
+                  },
+                });
+                if (error) {
+                  alert(`Sign in failed: ${error.message}`);
+                }
+              }}
+              className="w-full h-12 flex items-center justify-center gap-3 bg-foreground text-background font-mono text-xs tracking-wider font-bold hover:bg-foreground/90 transition-all uppercase border border-foreground select-none"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05"/>
+                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/>
+              </svg>
+              Continue with Google
+            </button>
+          </div>
+        </div>
+      )}
     </>
   );
 }
